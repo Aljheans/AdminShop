@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: php-admin-panel
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: admin123
+      - key: SESSION_SECRET
+        generateValue: true

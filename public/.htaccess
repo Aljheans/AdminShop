@@ -1,0 +1,8 @@
+Options -Indexes
+RewriteEngine On
+
+# Redirect bare / to index.php
+RewriteRule ^$ index.php [L]
+
+# Block direct access to includes
+RewriteRule ^includes/ - [F,L]
