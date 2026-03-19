@@ -54,7 +54,6 @@ if (!$isSuperadmin) {
     if ($section === 'activity' && !$myPerms['can_activity']) {
         $section = 'admins';
     }
-    // Sales: only if has can_sales
     $salesSections = ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'];
     if (in_array($section, $salesSections) && !$myPerms['can_sales']) {
         $section = 'admins';
@@ -74,10 +73,28 @@ $stmt->bindValue(':o', $offset, PDO::PARAM_INT);
 $stmt->execute();
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ── RESET LOG ── */
+/* ── RESET LOG (users) ── */
 $resetLog = [];
 try {
-    $resetLog = $conn->query("SELECT username,code,reset_at FROM password_reset_log ORDER BY reset_at DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC);
+    $resetLog = $conn->query("
+        SELECT rl.username, rl.code, rl.reset_at
+        FROM password_reset_log rl
+        JOIN users u ON u.username = rl.username
+        WHERE u.role = 'user'
+        ORDER BY rl.reset_at DESC LIMIT 20
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
+/* ── RESET LOG (admins) ── */
+$adminResetLog = [];
+try {
+    $adminResetLog = $conn->query("
+        SELECT rl.username, rl.code, rl.reset_at
+        FROM password_reset_log rl
+        JOIN users u ON u.username = rl.username
+        WHERE u.role IN ('admin','superadmin')
+        ORDER BY rl.reset_at DESC LIMIT 20
+    ")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
 /* ── ADMINS LIST ── */
@@ -443,6 +460,7 @@ function imgSrc(string $url): string {
         <tr>
           <th>UID</th><th>Username</th><th>Email</th><th>Role</th>
           <th>Users Data</th><th>Activity Logs</th><th>Settings</th><th>Sales</th>
+          <th>Password</th>
           <?php if($isSuperadmin): ?><th>Save</th><?php endif; ?>
         </tr>
       </thead>
@@ -456,11 +474,13 @@ function imgSrc(string $url): string {
         </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($a['email']) ?></td>
         <td><span class="role-badge <?= $a['role']==='superadmin'?'role-superadmin':'role-admin' ?>"><?= $a['role'] ?></span></td>
+
         <?php if($a['role']==='superadmin'): ?>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
+          <td><span style="font-size:11px;color:var(--muted)">protected</span></td>
           <?php if($isSuperadmin): ?><td><span style="font-size:11px;color:var(--muted)">—</span></td><?php endif; ?>
         <?php elseif($isSuperadmin): ?>
           <form method="POST" action="update_admin_permissions.php" style="display:contents">
@@ -469,6 +489,9 @@ function imgSrc(string $url): string {
             <td><label class="checkbox-label"><input type="checkbox" name="can_activity" value="1" <?= $a['can_activity']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_settings" value="1" <?= $a['can_settings']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_sales" value="1" <?= $a['can_sales']?'checked':'' ?>></label></td>
+            <td>
+              <button class="btn-reset" data-id="<?= $a['id'] ?>" data-username="<?= htmlspecialchars($a['username']) ?>" onclick="resetAdminPassword(this)">Reset</button>
+            </td>
             <td><button type="submit" class="btn btn-dark" style="padding:5px 12px;font-size:12px">Save</button></td>
           </form>
         <?php else: ?>
@@ -476,6 +499,7 @@ function imgSrc(string $url): string {
           <td><?= $a['can_activity'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_settings'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_sales'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+          <td><span style="font-size:11px;color:var(--muted)">—</span></td>
         <?php endif; ?>
       </tr>
       <?php endforeach; ?>
@@ -486,6 +510,30 @@ function imgSrc(string $url): string {
       Only the Superadmin can modify permissions. You are viewing this page in read-only mode.
     </div>
     <?php endif; ?>
+  </div>
+
+  <!-- Admin Password Reset Log -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <span class="card-title">🔑 Admin Password Reset Log</span>
+      <span style="font-size:12px;color:var(--muted)">Latest 20 — share code with the admin</span>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Username</th><th>Temporary Code</th><th>Reset At</th></tr></thead>
+      <tbody id="adminResetLogBody">
+      <?php if(empty($adminResetLog)): ?>
+        <tr id="adminEmptyRow"><td colspan="3" class="empty-state">No admin resets yet.</td></tr>
+      <?php else: ?>
+        <?php foreach($adminResetLog as $e): ?>
+        <tr>
+          <td style="font-weight:500"><?= htmlspecialchars($e['username']) ?></td>
+          <td><span class="code-badge"><?= htmlspecialchars($e['code']) ?></span></td>
+          <td style="color:var(--muted)"><?= htmlspecialchars($e['reset_at']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+      </tbody>
+    </table>
   </div>
 
   <!-- ══════════ ACTIVITY LOGS ══════════ -->
@@ -742,6 +790,28 @@ async function resetPassword(btn){
 function addLogRow(username,code,resetAt){
   const tbody=document.getElementById("resetLogBody");
   const empty=document.getElementById("emptyRow");if(empty)empty.remove();
+  const tr=document.createElement("tr");tr.className="new-row";
+  tr.innerHTML=`<td style="font-weight:500">${esc(username)}</td><td><span class="code-badge">${esc(code)}</span></td><td style="color:var(--muted)">${esc(resetAt)}</td>`;
+  tbody.insertBefore(tr,tbody.firstChild);
+  tr.scrollIntoView({behavior:"smooth",block:"center"});
+}
+async function resetAdminPassword(btn){
+  const userId=btn.dataset.id,username=btn.dataset.username;
+  if(!confirm(`Reset password for admin "${username}"?\n\nThis will generate a temporary code they must use to log in.`))return;
+  btn.disabled=true;btn.classList.add("resetting");const orig=btn.textContent;btn.textContent="…";
+  try{
+    const res=await fetch("../api/reset_password.php",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:parseInt(userId)})});
+    const raw=await res.text();let data;
+    try{data=JSON.parse(raw)}catch(_){alert("Server error.");return}
+    if(data.status==="success"){addAdminLogRow(data.username,data.code,data.reset_at);showToast(`✓ Password reset for ${data.username}`);}
+    else{alert("Error: "+(data.message||"Failed."));}
+  }catch(err){alert("Network error.");}
+  finally{btn.disabled=false;btn.classList.remove("resetting");btn.textContent=orig;}
+}
+function addAdminLogRow(username,code,resetAt){
+  const tbody=document.getElementById("adminResetLogBody");
+  if(!tbody)return;
+  const empty=document.getElementById("adminEmptyRow");if(empty)empty.remove();
   const tr=document.createElement("tr");tr.className="new-row";
   tr.innerHTML=`<td style="font-weight:500">${esc(username)}</td><td><span class="code-badge">${esc(code)}</span></td><td style="color:var(--muted)">${esc(resetAt)}</td>`;
   tbody.insertBefore(tr,tbody.firstChild);
