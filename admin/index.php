@@ -53,14 +53,14 @@ if (!$isSuperadmin) {
     }
 }
 
-/* ── USER MANAGEMENT ── */
+/* ── USER MANAGEMENT — only role='user' rows ── */
 $limit      = 5;
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $offset     = ($page - 1) * $limit;
-$totalAll   = (int)$conn->query("SELECT COUNT(*) FROM users")->fetchColumn();
+$totalAll   = (int)$conn->query("SELECT COUNT(*) FROM users WHERE role='user'")->fetchColumn();
 $totalPages = (int)ceil($totalAll / $limit);
 
-$stmt = $conn->prepare("SELECT * FROM users LIMIT :l OFFSET :o");
+$stmt = $conn->prepare("SELECT * FROM users WHERE role='user' ORDER BY created_at DESC LIMIT :l OFFSET :o");
 $stmt->bindValue(':l', $limit,  PDO::PARAM_INT);
 $stmt->bindValue(':o', $offset, PDO::PARAM_INT);
 $stmt->execute();
@@ -163,10 +163,12 @@ function imgSrc(string $url): string {
 <aside class="sidebar" id="sidebar">
   <nav class="sidenav">
 
+    <?php if($isSuperadmin || $myPerms['can_userdata']): ?>
     <a href="?section=user-management" class="sidenav-item <?= $section==='user-management'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       Users
     </a>
+    <?php endif; ?>
 
     <a href="?section=admins" class="sidenav-item <?= $section==='admins'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/><path d="M19 11l1.5 1.5L23 10"/></svg>
@@ -193,12 +195,6 @@ function imgSrc(string $url): string {
 
   <!-- STAT CARDS -->
   <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon blue">
-        <svg width="22" height="22" fill="none" stroke="#3b82f6" stroke-width="1.8" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      </div>
-      <div><div class="stat-label">Clients</div><div class="stat-value" id="liveClients">—</div></div>
-    </div>
     <div class="stat-card">
       <div class="stat-icon purple">
         <svg width="22" height="22" fill="none" stroke="#8b5cf6" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
@@ -276,7 +272,6 @@ function imgSrc(string $url): string {
           <span class="role-badge <?= $c ?>"><?= htmlspecialchars($r) ?></span>
         </td>
         <td>
-          <?php if($row['role']!=='superadmin'): ?>
           <button class="btn-icon" title="Edit" onclick="openEditModal(<?= $row['id'] ?>,'<?= addslashes($row['username']) ?>','<?= addslashes($row['email']) ?>','<?= addslashes($row['role']) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -287,9 +282,6 @@ function imgSrc(string $url): string {
             onclick="forceLogoutUser(<?= $row['id'] ?>,'<?= addslashes($row['username']) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
-          <?php else: ?>
-          <span style="font-size:11px;color:var(--muted)">protected</span>
-          <?php endif; ?>
         </td>
       </tr>
       <?php endforeach; ?>
@@ -410,6 +402,7 @@ function imgSrc(string $url): string {
       </div>
     </div>
 
+    <?php if($isSuperadmin): ?>
     <div class="card">
       <div class="card-header"><span class="card-title">💾 Download Database</span></div>
       <div style="padding:24px">
@@ -447,6 +440,7 @@ function imgSrc(string $url): string {
         </form>
       </div>
     </div>
+    <?php endif; ?>
   </div>
 
   <?php endif; ?>
@@ -593,7 +587,6 @@ function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").repl
   try{const r=await fetch("<?= rtrim(API_BASE_URL,'/') ?>/ping");const d=await r.json();updateStats(d);}catch(_){}
 })();
 function updateStats(data){
-  if(data.clients!==undefined)document.getElementById("liveClients").textContent=data.clients;
   if(data.admins!==undefined)document.getElementById("liveAdmins").textContent=data.admins;
   if(data.users!==undefined)document.getElementById("liveUsers").textContent=data.users;
 }
