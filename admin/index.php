@@ -16,13 +16,17 @@ $adminRole = $_SESSION['role']     ?? 'admin';
 $isSuperadmin = ($adminRole === 'superadmin');
 
 // ── Resolve current admin's permissions ──
-$myPerms = ['can_userdata' => 1, 'can_activity' => 1, 'can_settings' => 1, 'can_sales' => 1]; // superadmin: full access
+$myPerms = ['can_userdata' => 1, 'can_activity' => 1, 'can_settings' => 1, 'can_sales' => 1,
+             'can_sales_catered' => 1, 'can_sales_denied' => 1, 'can_sales_tickets' => 1, 'can_sales_orders' => 1]; // superadmin: full access
 if (!$isSuperadmin) {
     $myId = $_SESSION['user_id'] ?? 0;
-    $p = $conn->prepare("SELECT can_userdata, can_activity, can_settings, can_sales FROM admin_permissions WHERE user_id = :id");
+    $p = $conn->prepare("SELECT can_userdata, can_activity, can_settings, can_sales,
+                                can_sales_catered, can_sales_denied, can_sales_tickets, can_sales_orders
+                         FROM admin_permissions WHERE user_id = :id");
     $p->execute([':id' => $myId]);
     $row = $p->fetch(PDO::FETCH_ASSOC);
-    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0, 'can_settings' => 0, 'can_sales' => 0];
+    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0, 'can_settings' => 0, 'can_sales' => 0,
+                        'can_sales_catered' => 0, 'can_sales_denied' => 0, 'can_sales_tickets' => 0, 'can_sales_orders' => 0];
 }
 
 /* ── API CHECK ── */
@@ -54,8 +58,22 @@ if (!$isSuperadmin) {
     if ($section === 'activity' && !$myPerms['can_activity']) {
         $section = 'admins';
     }
-    $salesSections = ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'];
-    if (in_array($section, $salesSections) && !$myPerms['can_sales']) {
+    // Sales: overview and admin-salary are superadmin-only
+    if (in_array($section, ['sales-overview','sales-admin-salary'])) {
+        $section = 'admins';
+    }
+    // Sales sub-pages: check individual permissions
+    $salesSubGate = [
+        'sales-catered' => 'can_sales_catered',
+        'sales-denied'  => 'can_sales_denied',
+        'sales-tickets' => 'can_sales_tickets',
+        'sales-orders'  => 'can_sales_orders',
+    ];
+    if (isset($salesSubGate[$section]) && !$myPerms[$salesSubGate[$section]]) {
+        $section = 'admins';
+    }
+    // If no sales permission at all and trying any sales page
+    if (!$myPerms['can_sales'] && str_starts_with($section, 'sales-')) {
         $section = 'admins';
     }
 }
@@ -99,11 +117,15 @@ try {
 
 /* ── ADMINS LIST ── */
 $adminsList = $conn->query("
-    SELECT u.id, u.username, u.email, u.uid, u.role,
+    SELECT u.id, u.username, u.email, u.uid, u.role, u.is_online,
            COALESCE(p.can_userdata,0) AS can_userdata,
            COALESCE(p.can_activity,0) AS can_activity,
            COALESCE(p.can_settings,0) AS can_settings,
-           COALESCE(p.can_sales,0) AS can_sales
+           COALESCE(p.can_sales,0) AS can_sales,
+           COALESCE(p.can_sales_catered,0) AS can_sales_catered,
+           COALESCE(p.can_sales_denied,0) AS can_sales_denied,
+           COALESCE(p.can_sales_tickets,0) AS can_sales_tickets,
+           COALESCE(p.can_sales_orders,0) AS can_sales_orders
     FROM users u
     LEFT JOIN admin_permissions p ON p.user_id = u.id
     WHERE u.role IN ('admin','superadmin')
@@ -205,6 +227,19 @@ function imgSrc(string $url): string {
     <?php else: ?>
       <span style="font-size:13px;color:var(--muted)">👤 <?= htmlspecialchars($adminName) ?></span>
     <?php endif; ?>
+    <?php
+    $onlineAdmins = array_filter($adminsList, fn($a) => $a['is_online'] == 1 && $a['username'] !== $adminName);
+    if(!empty($onlineAdmins)):
+    ?>
+    <div class="online-admins-pill">
+      <span class="online-dot-pulse"></span>
+      <?php foreach(array_values($onlineAdmins) as $i => $oa): ?>
+        <?php if($i > 0): ?><span style="opacity:.4;margin:0 1px">·</span><?php endif; ?>
+        <span class="online-admin-name"><?= htmlspecialchars($oa['username']) ?></span>
+      <?php endforeach; ?>
+      <span style="font-size:11px;opacity:.7;margin-left:3px">online</span>
+    </div>
+    <?php endif; ?>
     <div class="api-badge <?= $apiOnline?'':'offline' ?>">
       <span class="api-dot"></span>
       <?= $apiOnline?'API Connected':'API Offline' ?>
@@ -269,6 +304,7 @@ function imgSrc(string $url): string {
         <svg class="nav-chevron" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
       <div class="nav-group-items">
+        <?php if($isSuperadmin): ?>
         <a href="?section=sales-overview" class="sidenav-item sidenav-child <?= $section==='sales-overview'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
           Sales Overview
@@ -277,22 +313,31 @@ function imgSrc(string $url): string {
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
           Admin Salary
         </a>
+        <?php endif; ?>
+        <?php if($isSuperadmin || $myPerms['can_sales_catered']): ?>
         <a href="?section=sales-catered" class="sidenav-item sidenav-child <?= $section==='sales-catered'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           Total Ordered Catered
         </a>
+        <?php endif; ?>
+        <?php if($isSuperadmin || $myPerms['can_sales_denied']): ?>
         <a href="?section=sales-denied" class="sidenav-item sidenav-child <?= $section==='sales-denied'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
           Total Ordered Denied
         </a>
+        <?php endif; ?>
+        <?php if($isSuperadmin || $myPerms['can_sales_tickets']): ?>
         <a href="?section=sales-tickets" class="sidenav-item sidenav-child <?= $section==='sales-tickets'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/></svg>
           Tickets
         </a>
+        <?php endif; ?>
+        <?php if($isSuperadmin || $myPerms['can_sales_orders']): ?>
         <a href="?section=sales-orders" class="sidenav-item sidenav-child <?= $section==='sales-orders'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
           Orders
         </a>
+        <?php endif; ?>
       </div>
     </div>
     <?php endif; ?>
@@ -458,8 +503,15 @@ function imgSrc(string $url): string {
     <table class="data-table">
       <thead>
         <tr>
-          <th>UID</th><th>Username</th><th>Email</th><th>Role</th>
-          <th>Users Data</th><th>Activity Logs</th><th>Settings</th><th>Sales</th>
+          <th>UID</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Users Data</th>
+          <th>Activity Logs</th>
+          <th>Settings</th>
+          <th>Sales</th>
           <th>Password</th>
           <?php if($isSuperadmin): ?><th>Save</th><?php endif; ?>
         </tr>
@@ -474,12 +526,19 @@ function imgSrc(string $url): string {
         </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($a['email']) ?></td>
         <td><span class="role-badge <?= $a['role']==='superadmin'?'role-superadmin':'role-admin' ?>"><?= $a['role'] ?></span></td>
+        <td>
+          <?php if($a['is_online']): ?>
+            <span class="admin-status-on"><span class="admin-dot"></span>Online</span>
+          <?php else: ?>
+            <span class="admin-status-off">Offline</span>
+          <?php endif; ?>
+        </td>
 
         <?php if($a['role']==='superadmin'): ?>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
-          <td><span class="perm-full">✓ Full</span></td>
+          <td><span class="perm-full">✓ All</span></td>
           <td><span style="font-size:11px;color:var(--muted)">protected</span></td>
           <?php if($isSuperadmin): ?><td><span style="font-size:11px;color:var(--muted)">—</span></td><?php endif; ?>
         <?php elseif($isSuperadmin): ?>
@@ -488,7 +547,18 @@ function imgSrc(string $url): string {
             <td><label class="checkbox-label"><input type="checkbox" name="can_userdata" value="1" <?= $a['can_userdata']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_activity" value="1" <?= $a['can_activity']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_settings" value="1" <?= $a['can_settings']?'checked':'' ?>></label></td>
-            <td><label class="checkbox-label"><input type="checkbox" name="can_sales" value="1" <?= $a['can_sales']?'checked':'' ?>></label></td>
+            <td>
+              <label class="checkbox-label" style="margin-bottom:4px">
+                <input type="checkbox" name="can_sales" value="1" <?= $a['can_sales']?'checked':'' ?> onchange="toggleSalesSubs(this,<?= $a['id'] ?>)">
+                <span style="font-size:11px;font-weight:600">Sales</span>
+              </label>
+              <div id="sales-subs-<?= $a['id'] ?>" style="padding-left:14px;display:<?= $a['can_sales']?'block':'none' ?>">
+                <label class="checkbox-label" style="font-size:11px"><input type="checkbox" name="can_sales_catered" value="1" <?= $a['can_sales_catered']?'checked':'' ?>> Catered</label>
+                <label class="checkbox-label" style="font-size:11px"><input type="checkbox" name="can_sales_denied" value="1" <?= $a['can_sales_denied']?'checked':'' ?>> Denied</label>
+                <label class="checkbox-label" style="font-size:11px"><input type="checkbox" name="can_sales_tickets" value="1" <?= $a['can_sales_tickets']?'checked':'' ?>> Tickets</label>
+                <label class="checkbox-label" style="font-size:11px"><input type="checkbox" name="can_sales_orders" value="1" <?= $a['can_sales_orders']?'checked':'' ?>> Orders</label>
+              </div>
+            </td>
             <td>
               <button class="btn-reset" data-id="<?= $a['id'] ?>" data-username="<?= htmlspecialchars($a['username']) ?>" onclick="resetAdminPassword(this)">Reset</button>
             </td>
@@ -498,7 +568,21 @@ function imgSrc(string $url): string {
           <td><?= $a['can_userdata'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_activity'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_settings'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
-          <td><?= $a['can_sales'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+          <td>
+            <?php if($a['can_sales']): ?>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <?php if($a['can_sales_catered']): ?><span class="perm-on" style="font-size:11px">✓ Catered</span><?php endif; ?>
+                <?php if($a['can_sales_denied']): ?><span class="perm-on" style="font-size:11px">✓ Denied</span><?php endif; ?>
+                <?php if($a['can_sales_tickets']): ?><span class="perm-on" style="font-size:11px">✓ Tickets</span><?php endif; ?>
+                <?php if($a['can_sales_orders']): ?><span class="perm-on" style="font-size:11px">✓ Orders</span><?php endif; ?>
+                <?php if(!$a['can_sales_catered']&&!$a['can_sales_denied']&&!$a['can_sales_tickets']&&!$a['can_sales_orders']): ?>
+                  <span class="perm-off" style="font-size:11px">No sub-access</span>
+                <?php endif; ?>
+              </div>
+            <?php else: ?>
+              <span class="perm-off">✗ No</span>
+            <?php endif; ?>
+          </td>
           <td><span style="font-size:11px;color:var(--muted)">—</span></td>
         <?php endif; ?>
       </tr>
@@ -739,6 +823,10 @@ function toggleSidebar(){
 function toggleGroup(id) {
   const el = document.getElementById(id);
   el.classList.toggle('open');
+}
+function toggleSalesSubs(cb, adminId) {
+  const subs = document.getElementById('sales-subs-' + adminId);
+  if (subs) subs.style.display = cb.checked ? 'block' : 'none';
 }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
