@@ -51,6 +51,10 @@ if (!$isSuperadmin) {
     if ($section === 'user-management' && !$myPerms['can_userdata']) {
         $section = 'admins';
     }
+    // Activity logs: only if has can_activity
+    if ($section === 'activity' && !$myPerms['can_activity']) {
+        $section = 'admins';
+    }
 }
 
 /* ── USER MANAGEMENT — only role='user' rows ── */
@@ -83,6 +87,25 @@ $adminsList = $conn->query("
     WHERE u.role IN ('admin','superadmin')
     ORDER BY u.uid ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+/* ── ACTIVITY LOG ── */
+$activityLog = [];
+$activityPage  = max(1, (int)($_GET['apage'] ?? 1));
+$activityLimit = 20;
+$activityOffset = ($activityPage - 1) * $activityLimit;
+$activityTotal = 0;
+$activityPages = 1;
+if ($section === 'activity' || $isSuperadmin || $myPerms['can_activity']) {
+    try {
+        $activityTotal = (int)$conn->query("SELECT COUNT(*) FROM activity_log")->fetchColumn();
+        $activityPages = max(1, (int)ceil($activityTotal / $activityLimit));
+        $aStmt = $conn->prepare("SELECT * FROM activity_log ORDER BY logged_at DESC LIMIT :l OFFSET :o");
+        $aStmt->bindValue(':l', $activityLimit, PDO::PARAM_INT);
+        $aStmt->bindValue(':o', $activityOffset, PDO::PARAM_INT);
+        $aStmt->execute();
+        $activityLog = $aStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+}
 
 $settingsMsg = ''; $settingsMsgType = '';
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['_action']??'')==='change_password') {
@@ -174,6 +197,13 @@ function imgSrc(string $url): string {
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/><path d="M19 11l1.5 1.5L23 10"/></svg>
       Admins
     </a>
+
+    <?php if($isSuperadmin || $myPerms['can_activity']): ?>
+    <a href="?section=activity" class="sidenav-item <?= $section==='activity'?'active':'' ?>">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Activity Logs
+    </a>
+    <?php endif; ?>
 
     <?php if($isSuperadmin || $myPerms['can_settings']): ?>
     <a href="?section=settings" class="sidenav-item <?= $section==='settings'?'active':'' ?>">
@@ -376,6 +406,54 @@ function imgSrc(string $url): string {
     <div style="padding:14px 20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)">
       Only the Superadmin can modify permissions. You are viewing this page in read-only mode.
     </div>
+    <?php endif; ?>
+  </div>
+
+  <!-- ══════════ ACTIVITY LOGS ══════════ -->
+  <?php elseif($section==='activity'): ?>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Activity Logs</span>
+      <span style="font-size:12px;color:var(--muted)"><?= number_format($activityTotal) ?> total entries</span>
+    </div>
+    <?php if(empty($activityLog)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No activity recorded yet.</div>
+    <?php else: ?>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Admin</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Detail</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach($activityLog as $entry): ?>
+      <tr>
+        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($entry['id']) ?></td>
+        <td><span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span></td>
+        <td><span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span></td>
+        <td style="color:var(--muted)"><?= htmlspecialchars($entry['target'] ?? '—') ?></td>
+        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
+          <?= htmlspecialchars($entry['detail'] ?? '—') ?>
+        </td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap"><?= htmlspecialchars($entry['logged_at']) ?></td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php if($activityPages > 1): ?>
+    <div class="pagination">
+      <?php for($i=1;$i<=$activityPages;$i++): ?>
+        <a href="?section=activity&apage=<?= $i ?>" class="<?= $i==$activityPage?'active':'' ?>"><?= $i ?></a>
+      <?php endfor; ?>
+    </div>
+    <?php endif; ?>
     <?php endif; ?>
   </div>
 

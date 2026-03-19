@@ -945,3 +945,46 @@ body {
   padding: 2px 10px;
   display: inline-block;
 }
+/* ── Permission indicators (Admins table) ── */
+.perm-full {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--purple);
+  background: var(--purple-bg);
+  border-radius: 20px;
+  padding: 2px 10px;
+  display: inline-block;
+}
+.perm-on {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-bd);
+  border-radius: 20px;
+  padding: 2px 10px;
+  display: inline-block;
+}
+.perm-off {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+  display: inline-block;
+}
+
+/* ── Activity Logs ── */
+.activity-action {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(59,130,246,.08);
+  color: var(--blue);
+  border: 1px solid rgba(59,130,246,.18);
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
