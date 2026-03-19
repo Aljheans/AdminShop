@@ -51,12 +51,12 @@ if (!$isSuperadmin) {
     if ($section === 'user-management' && !$myPerms['can_userdata']) {
         $section = 'admins';
     }
-    // Activity logs: only if has can_activity
     if ($section === 'activity' && !$myPerms['can_activity']) {
         $section = 'admins';
     }
     // Sales: only if has can_sales
-    if ($section === 'sales' && !$myPerms['can_sales']) {
+    $salesSections = ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'];
+    if (in_array($section, $salesSections) && !$myPerms['can_sales']) {
         $section = 'admins';
     }
 }
@@ -111,6 +111,16 @@ if ($section === 'activity' || $isSuperadmin || $myPerms['can_activity']) {
         $activityLog = $aStmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {}
 }
+
+// Sales section labels
+$salesLabels = [
+    'sales-overview'     => 'Sales Overview',
+    'sales-admin-salary' => 'Admin Salary',
+    'sales-catered'      => 'Total Ordered Catered',
+    'sales-denied'       => 'Total Ordered Denied',
+    'sales-tickets'      => 'Tickets',
+    'sales-orders'       => 'Orders',
+];
 
 $settingsMsg = ''; $settingsMsgType = '';
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['_action']??'')==='change_password') {
@@ -191,32 +201,86 @@ function imgSrc(string $url): string {
 <aside class="sidebar" id="sidebar">
   <nav class="sidenav">
 
-    <?php if($isSuperadmin || $myPerms['can_userdata']): ?>
-    <a href="?section=user-management" class="sidenav-item <?= $section==='user-management'?'active':'' ?>">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Users
-    </a>
+    <?php
+    $userMgmtSections = ['user-management','admins','activity'];
+    $salesSections    = ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'];
+    $inUserMgmt = in_array($section, $userMgmtSections);
+    $inSales    = in_array($section, $salesSections);
+    $showUserGroup  = $isSuperadmin || $myPerms['can_userdata'] || $myPerms['can_activity'];
+    $showSalesGroup = $isSuperadmin || $myPerms['can_sales'];
+    ?>
+
+    <!-- ── User Management Group ── -->
+    <?php if($showUserGroup): ?>
+    <div class="nav-group <?= $inUserMgmt ? 'open' : '' ?>" id="grp-user">
+      <button class="nav-group-header" onclick="toggleGroup('grp-user')">
+        <span class="nav-group-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          User Management
+        </span>
+        <svg class="nav-chevron" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="nav-group-items">
+        <?php if($isSuperadmin || $myPerms['can_userdata']): ?>
+        <a href="?section=user-management" class="sidenav-item sidenav-child <?= $section==='user-management'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          Users
+        </a>
+        <?php endif; ?>
+        <a href="?section=admins" class="sidenav-item sidenav-child <?= $section==='admins'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+          Admins
+        </a>
+        <?php if($isSuperadmin || $myPerms['can_activity']): ?>
+        <a href="?section=activity" class="sidenav-item sidenav-child <?= $section==='activity'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+          Activity Logs
+        </a>
+        <?php endif; ?>
+      </div>
+    </div>
     <?php endif; ?>
 
-    <a href="?section=admins" class="sidenav-item <?= $section==='admins'?'active':'' ?>">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/><path d="M19 11l1.5 1.5L23 10"/></svg>
-      Admins
-    </a>
-
-    <?php if($isSuperadmin || $myPerms['can_activity']): ?>
-    <a href="?section=activity" class="sidenav-item <?= $section==='activity'?'active':'' ?>">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      Activity Logs
-    </a>
+    <!-- ── Sales Management Group ── -->
+    <?php if($showSalesGroup): ?>
+    <div class="nav-group <?= $inSales ? 'open' : '' ?>" id="grp-sales">
+      <button class="nav-group-header" onclick="toggleGroup('grp-sales')">
+        <span class="nav-group-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Sales Management
+        </span>
+        <svg class="nav-chevron" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="nav-group-items">
+        <a href="?section=sales-overview" class="sidenav-item sidenav-child <?= $section==='sales-overview'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          Sales Overview
+        </a>
+        <a href="?section=sales-admin-salary" class="sidenav-item sidenav-child <?= $section==='sales-admin-salary'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+          Admin Salary
+        </a>
+        <a href="?section=sales-catered" class="sidenav-item sidenav-child <?= $section==='sales-catered'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Total Ordered Catered
+        </a>
+        <a href="?section=sales-denied" class="sidenav-item sidenav-child <?= $section==='sales-denied'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          Total Ordered Denied
+        </a>
+        <a href="?section=sales-tickets" class="sidenav-item sidenav-child <?= $section==='sales-tickets'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/></svg>
+          Tickets
+        </a>
+        <a href="?section=sales-orders" class="sidenav-item sidenav-child <?= $section==='sales-orders'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          Orders
+        </a>
+      </div>
+    </div>
     <?php endif; ?>
 
-    <?php if($isSuperadmin || $myPerms['can_sales']): ?>
-    <a href="?section=sales" class="sidenav-item <?= $section==='sales'?'active':'' ?>">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      Sales
-    </a>
-    <?php endif; ?>
-
+    <!-- ── Settings ── -->
     <?php if($isSuperadmin || $myPerms['can_settings']): ?>
     <a href="?section=settings" class="sidenav-item <?= $section==='settings'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -236,7 +300,7 @@ function imgSrc(string $url): string {
 <main class="main-content">
 
   <!-- STAT CARDS — hidden in Sales Management -->
-  <?php if($section !== 'sales'): ?>
+  <?php if(!in_array($section, ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'])): ?>
   <div class="stats-grid">
     <div class="stat-card">
       <div class="stat-icon purple">
@@ -377,14 +441,8 @@ function imgSrc(string $url): string {
     <table class="data-table">
       <thead>
         <tr>
-          <th>UID</th>
-          <th>Username</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Users Data</th>
-          <th>Activity Logs</th>
-          <th>Settings</th>
-          <th>Sales</th>
+          <th>UID</th><th>Username</th><th>Email</th><th>Role</th>
+          <th>Users Data</th><th>Activity Logs</th><th>Settings</th><th>Sales</th>
           <?php if($isSuperadmin): ?><th>Save</th><?php endif; ?>
         </tr>
       </thead>
@@ -398,7 +456,6 @@ function imgSrc(string $url): string {
         </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($a['email']) ?></td>
         <td><span class="role-badge <?= $a['role']==='superadmin'?'role-superadmin':'role-admin' ?>"><?= $a['role'] ?></span></td>
-
         <?php if($a['role']==='superadmin'): ?>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
@@ -443,28 +500,16 @@ function imgSrc(string $url): string {
       <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No activity recorded yet.</div>
     <?php else: ?>
     <table class="data-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Admin</th>
-          <th>Action</th>
-          <th>Target</th>
-          <th>Detail</th>
-          <th>Time</th>
-        </tr>
-      </thead>
+      <thead><tr><th>#</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th><th>Time</th></tr></thead>
       <tbody>
       <?php foreach($activityLog as $entry): ?>
       <tr>
         <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($entry['id']) ?></td>
-        <td>
-          <span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span>
-        </td>
-        <td>
-          <span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span>
-        </td>
+        <td><span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span></td>
+        <td><span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span></td>
         <td style="color:var(--muted)"><?= htmlspecialchars($entry['target'] ?? '—') ?></td>
-        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
+        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
           <?= htmlspecialchars($entry['detail'] ?? '—') ?>
         </td>
         <td style="color:var(--muted);font-size:12px;white-space:nowrap"><?= htmlspecialchars($entry['logged_at']) ?></td>
@@ -483,40 +528,15 @@ function imgSrc(string $url): string {
   </div>
 
   <!-- ══════════ SALES MANAGEMENT ══════════ -->
-  <?php elseif($section==='sales'): ?>
-
-  <?php
-  $salesSubs = [
-      'overview'     => ['label' => 'Sales Overview',        'icon' => '<path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>'],
-      'admin-salary' => ['label' => 'Admin Salary',          'icon' => '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'],
-      'catered'      => ['label' => 'Total Ordered Catered', 'icon' => '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'],
-      'denied'       => ['label' => 'Total Ordered Denied',  'icon' => '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'],
-      'tickets'      => ['label' => 'Tickets',               'icon' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/>'],
-      'orders'       => ['label' => 'Orders',                'icon' => '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>'],
-  ];
-  $sub = $_GET['sub'] ?? 'overview';
-  if (!array_key_exists($sub, $salesSubs)) $sub = 'overview';
-  ?>
-
-  <!-- Sales Sub-navigation -->
-  <div class="sales-subnav">
-    <?php foreach($salesSubs as $key => $info): ?>
-    <a href="?section=sales&sub=<?= $key ?>" class="sales-subnav-item <?= $sub === $key ? 'active' : '' ?>">
-      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><?= $info['icon'] ?></svg>
-      <?= $info['label'] ?>
-    </a>
-    <?php endforeach; ?>
-  </div>
-
-  <!-- Sales Content Placeholder -->
-  <div class="card" style="margin-top:20px">
+  <?php elseif(isset($salesLabels[$section])): ?>
+  <div class="card">
     <div class="card-header">
-      <span class="card-title"><?= $salesSubs[$sub]['label'] ?></span>
+      <span class="card-title"><?= $salesLabels[$section] ?></span>
       <span style="font-size:12px;color:var(--muted)">Coming soon</span>
     </div>
     <div style="padding:60px 32px;text-align:center;color:var(--muted)">
       <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 14px;display:block;opacity:.4"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-      <div style="font-size:14px;font-weight:500;margin-bottom:6px"><?= $salesSubs[$sub]['label'] ?></div>
+      <div style="font-size:14px;font-weight:500;margin-bottom:6px"><?= $salesLabels[$section] ?></div>
       <div style="font-size:13px">Content for this section hasn't been added yet.</div>
     </div>
   </div>
@@ -667,6 +687,10 @@ function imgSrc(string $url): string {
 <script>
 function toggleSidebar(){
   document.getElementById('sidebar').classList.toggle('collapsed');
+}
+function toggleGroup(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
 }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
