@@ -2,18 +2,24 @@ FROM php:8.2-apache
 
 RUN a2enmod rewrite
 
-WORKDIR /var/www/html
+RUN apt-get update && apt-get install -y libsqlite3-dev \
+    && docker-php-ext-install pdo pdo_sqlite
 
-COPY public/ /var/www/html/
-COPY includes/ /var/www/includes/
+RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf \
+    && sed -i 's/80/${PORT}/g' /etc/apache2/ports.conf
 
-RUN echo '<Directory /var/www/html>\n\
-    Options Indexes FollowSymLinks\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>' > /etc/apache2/conf-available/custom.conf \
-    && a2enconf custom
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
-RUN chown -R www-data:www-data /var/www/html && chmod -R 755 /var/www/html
+RUN sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
 
-EXPOSE 80
+RUN echo "display_errors = On" >> /usr/local/etc/php/php.ini \
+    && echo "error_reporting = E_ALL" >> /usr/local/etc/php/php.ini
+
+COPY . /var/www/html/
+
+RUN mkdir -p /var/www/html/database \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html \
+    && chmod -R 775 /var/www/html/database
+
+EXPOSE ${PORT}
