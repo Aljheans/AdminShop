@@ -1,7 +1,9 @@
 <?php
+require_once '/var/www/config/env.php';
+
 define('ADMIN_USERNAME', getenv('ADMIN_USERNAME') ?: 'admin');
 define('ADMIN_PASSWORD', getenv('ADMIN_PASSWORD') ?: 'admin123');
-define('APP_NAME', 'AdminPanel');
+define('APP_NAME', getenv('APP_NAME') ?: 'AdminPanel');
 
 session_name('admin_session');
 if (session_status() === PHP_SESSION_NONE) session_start();

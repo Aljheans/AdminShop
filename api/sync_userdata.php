@@ -1,9 +1,6 @@
 <?php
-/**
- * api/sync_userdata.php
- * Called by FastAPI /sync endpoint (internal, server-to-server).
- * Accepts a bearer token matching INTERNAL_SYNC_KEY env var for auth.
- */
+require_once __DIR__ . '/../config/rate_limit.php';
+rate_limit('sync_userdata', 120, 60);
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/activity.php';

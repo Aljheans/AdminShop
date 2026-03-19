@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../config/rate_limit.php';
+rate_limit('login', 5, 60);
 header('Content-Type: application/json');
 
 $data     = json_decode(file_get_contents('php://input'), true);

@@ -9,20 +9,20 @@ if (empty($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'superadm
     exit;
 }
 
-define('API_BASE_URL', 'https://gatewayv1.onrender.com');
+define('API_BASE_URL', getenv('API_BASE_URL') ?: 'https://gatewayv1.onrender.com');
 
 $adminName = $_SESSION['username'] ?? 'admin';
 $adminRole = $_SESSION['role']     ?? 'admin';
 $isSuperadmin = ($adminRole === 'superadmin');
 
 // ── Resolve current admin's permissions ──
-$myPerms = ['can_userdata' => 1, 'can_activity' => 1]; // superadmin: full access
+$myPerms = ['can_userdata' => 1, 'can_activity' => 1, 'can_settings' => 1]; // superadmin: full access
 if (!$isSuperadmin) {
     $myId = $_SESSION['user_id'] ?? 0;
-    $p = $conn->prepare("SELECT can_userdata, can_activity FROM admin_permissions WHERE user_id = :id");
+    $p = $conn->prepare("SELECT can_userdata, can_activity, can_settings FROM admin_permissions WHERE user_id = :id");
     $p->execute([':id' => $myId]);
     $row = $p->fetch(PDO::FETCH_ASSOC);
-    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0];
+    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0, 'can_settings' => 0];
 }
 
 /* ── API CHECK ── */
@@ -45,7 +45,12 @@ $section = $_GET['section'] ?? 'user-management';
 
 // Permission gate for non-superadmins
 if (!$isSuperadmin) {
-    if (in_array($section, ['admins', 'settings'])) $section = 'user-management';
+    if ($section === 'settings' && !$myPerms['can_settings']) {
+        $section = 'user-management';
+    }
+    if ($section === 'user-management' && !$myPerms['can_userdata']) {
+        $section = 'admins';
+    }
 }
 
 /* ── USER MANAGEMENT ── */
@@ -67,23 +72,17 @@ try {
     $resetLog = $conn->query("SELECT username,code,reset_at FROM password_reset_log ORDER BY reset_at DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
-
-
-
-
 /* ── ADMINS LIST ── */
 $adminsList = $conn->query("
     SELECT u.id, u.username, u.email, u.uid, u.role,
            COALESCE(p.can_userdata,0) AS can_userdata,
-           COALESCE(p.can_activity,0) AS can_activity
+           COALESCE(p.can_activity,0) AS can_activity,
+           COALESCE(p.can_settings,0) AS can_settings
     FROM users u
     LEFT JOIN admin_permissions p ON p.user_id = u.id
     WHERE u.role IN ('admin','superadmin')
     ORDER BY u.uid ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
-
-
-
 
 $settingsMsg = ''; $settingsMsgType = '';
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['_action']??'')==='change_password') {
@@ -121,12 +120,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['_action']??'')==='db_command
     $section='settings';
 }
 
-// Helper: returns the correct src attribute value for an image_url.
-// Stored values are either a data URI (data:image/...) or a legacy file path.
 function imgSrc(string $url): string {
     if (empty($url)) return '';
-    if (str_starts_with($url, 'data:')) return $url;        // base64 data URI — use as-is
-    return '../' . ltrim($url, '/');                         // legacy file path
+    if (str_starts_with($url, 'data:')) return $url;
+    return '../' . ltrim($url, '/');
 }
 ?>
 <!DOCTYPE html>
@@ -171,17 +168,17 @@ function imgSrc(string $url): string {
       Users
     </a>
 
-    <?php if($isSuperadmin): ?>
     <a href="?section=admins" class="sidenav-item <?= $section==='admins'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/><path d="M19 11l1.5 1.5L23 10"/></svg>
       Admins
     </a>
-    <?php endif; ?>
 
+    <?php if($isSuperadmin || $myPerms['can_settings']): ?>
     <a href="?section=settings" class="sidenav-item <?= $section==='settings'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       Settings
     </a>
+    <?php endif; ?>
 
     <div class="sidenav-divider"></div>
     <a href="../api/logout.php" class="sidenav-item danger">
@@ -194,7 +191,7 @@ function imgSrc(string $url): string {
 <!-- MAIN -->
 <main class="main-content">
 
-  <!-- STAT CARDS — always visible -->
+  <!-- STAT CARDS -->
   <div class="stats-grid">
     <div class="stat-card">
       <div class="stat-icon blue">
@@ -328,6 +325,7 @@ function imgSrc(string $url): string {
     </table>
   </div>
 
+  <!-- ══════════ ADMINS ══════════ -->
   <?php elseif($section==='admins'): ?>
 
   <?php $adminCount = count(array_filter($adminsList, fn($a) => $a['role']==='admin')); ?>
@@ -337,7 +335,18 @@ function imgSrc(string $url): string {
       <span style="font-size:12px;color:var(--muted)"><?= $adminCount ?>/5 admin slots used</span>
     </div>
     <table class="data-table">
-      <thead><tr><th>UID</th><th>Username</th><th>Email</th><th>Role</th><th>Access Permissions</th></tr></thead>
+      <thead>
+        <tr>
+          <th>UID</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Users Data</th>
+          <th>Activity Logs</th>
+          <th>Settings</th>
+          <?php if($isSuperadmin): ?><th>Save</th><?php endif; ?>
+        </tr>
+      </thead>
       <tbody>
       <?php foreach($adminsList as $a): ?>
       <tr>
@@ -348,30 +357,35 @@ function imgSrc(string $url): string {
         </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($a['email']) ?></td>
         <td><span class="role-badge <?= $a['role']==='superadmin'?'role-superadmin':'role-admin' ?>"><?= $a['role'] ?></span></td>
-        <td>
-          <?php if($a['role']==='superadmin'): ?>
-            <span style="font-size:12px;color:var(--muted)">Full access — not configurable</span>
-          <?php else: ?>
-            <form method="POST" action="update_admin_permissions.php" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-              <input type="hidden" name="user_id" value="<?= $a['id'] ?>">
-              <label class="checkbox-label">
-                <input type="checkbox" name="can_userdata" value="1" <?= $a['can_userdata']?'checked':'' ?>>
-                Users Data
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="can_activity" value="1" <?= $a['can_activity']?'checked':'' ?>>
-                Activity Logs
-              </label>
-              <button type="submit" class="btn btn-dark" style="padding:5px 12px;font-size:12px">Save</button>
-            </form>
-          <?php endif; ?>
-        </td>
+
+        <?php if($a['role']==='superadmin'): ?>
+          <td><span class="perm-full">✓ Full</span></td>
+          <td><span class="perm-full">✓ Full</span></td>
+          <td><span class="perm-full">✓ Full</span></td>
+          <?php if($isSuperadmin): ?><td><span style="font-size:11px;color:var(--muted)">—</span></td><?php endif; ?>
+        <?php elseif($isSuperadmin): ?>
+          <form method="POST" action="update_admin_permissions.php" style="display:contents">
+            <input type="hidden" name="user_id" value="<?= $a['id'] ?>">
+            <td><label class="checkbox-label"><input type="checkbox" name="can_userdata" value="1" <?= $a['can_userdata']?'checked':'' ?>></label></td>
+            <td><label class="checkbox-label"><input type="checkbox" name="can_activity" value="1" <?= $a['can_activity']?'checked':'' ?>></label></td>
+            <td><label class="checkbox-label"><input type="checkbox" name="can_settings" value="1" <?= $a['can_settings']?'checked':'' ?>></label></td>
+            <td><button type="submit" class="btn btn-dark" style="padding:5px 12px;font-size:12px">Save</button></td>
+          </form>
+        <?php else: ?>
+          <td><?= $a['can_userdata'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+          <td><?= $a['can_activity'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+          <td><?= $a['can_settings'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+        <?php endif; ?>
       </tr>
       <?php endforeach; ?>
       </tbody>
     </table>
+    <?php if(!$isSuperadmin): ?>
+    <div style="padding:14px 20px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)">
+      Only the Superadmin can modify permissions. You are viewing this page in read-only mode.
+    </div>
+    <?php endif; ?>
   </div>
-
 
   <!-- ══════════ SETTINGS ══════════ -->
   <?php elseif($section==='settings'): ?>
@@ -435,18 +449,12 @@ function imgSrc(string $url): string {
     </div>
   </div>
 
-
-
-
-
   <?php endif; ?>
 
 </main>
 </div>
 
 <!-- MODALS -->
-
-
 <div class="modal" id="editModal">
 <div class="modal-box">
   <h3>Edit User</h3>
@@ -496,7 +504,6 @@ function imgSrc(string $url): string {
 </div>
 </div>
 
-<!-- Force Logout All — confirmation modal -->
 <div class="modal" id="logoutAllModal">
 <div class="modal-box" style="width:400px">
   <h3 id="logoutAllTitle">Logout All Users</h3>
@@ -524,6 +531,12 @@ function imgSrc(string $url): string {
 <script>
 function toggleSidebar(){
   document.getElementById('sidebar').classList.toggle('collapsed');
+}
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+async function post(url, data) {
+  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  return res.json();
 }
 const si=document.getElementById("searchInput");
 if(si)si.addEventListener("keyup",function(){
@@ -577,14 +590,15 @@ function addLogRow(username,code,resetAt){
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
 (async()=>{
-  try{const r=await fetch("https://gatewayv1.onrender.com/ping");const d=await r.json();updateStats(d);}catch(_){}
+  try{const r=await fetch("<?= rtrim(API_BASE_URL,'/') ?>/ping");const d=await r.json();updateStats(d);}catch(_){}
 })();
 function updateStats(data){
   if(data.clients!==undefined)document.getElementById("liveClients").textContent=data.clients;
   if(data.admins!==undefined)document.getElementById("liveAdmins").textContent=data.admins;
   if(data.users!==undefined)document.getElementById("liveUsers").textContent=data.users;
 }
-const ws=new WebSocket("wss://gatewayv1.onrender.com/ws");
+const _wsUrl = "<?= rtrim(API_BASE_URL,'/') ?>".replace(/^http/, 'ws') + '/ws';
+const ws=new WebSocket(_wsUrl);
 ws.onmessage=function(e){
   const data=JSON.parse(e.data);updateStats(data);
   const online=data.online_users||[];
@@ -595,24 +609,17 @@ ws.onmessage=function(e){
   });
 };
 
-// ══════════════════════════════════════════
-// FORCE LOGOUT — single user
-// ══════════════════════════════════════════
 async function forceLogoutUser(userId, username) {
   if (!confirm(`Force logout "${username}"?\n\nThis will immediately disconnect them from the game.`)) return;
-
   const btn = event.currentTarget;
   const origColor = btn.style.color;
   btn.disabled = true;
   btn.style.opacity = '0.4';
-
   try {
     const r = await post('force_logout.php', { mode: 'single', user_id: userId });
     if (r.status === 'success') {
-      // Flash the status dot offline
       const dot = document.querySelector(`.user-status[data-user="${esc(username)}"]`);
       if (dot) { dot.classList.remove('online'); dot.classList.add('offline'); }
-      // Brief visual feedback on button
       btn.style.color = '#22c55e';
       btn.style.opacity = '1';
       setTimeout(() => { btn.style.color = origColor; btn.disabled = false; }, 2000);
@@ -629,9 +636,6 @@ async function forceLogoutUser(userId, username) {
   }
 }
 
-// ══════════════════════════════════════════
-// FORCE LOGOUT — all users / all admins
-// ══════════════════════════════════════════
 let _logoutAllMode = '';
 const LOGOUT_PHRASES = {
   users:  'Confirm Logout All Users',
@@ -679,7 +683,6 @@ async function executeLogoutAll() {
   const btn  = document.getElementById('logoutAllConfirmBtn');
   btn.disabled = true;
   btn.textContent = 'Working…';
-
   try {
     const r = await post('force_logout.php', {
       mode: mode === 'users' ? 'all_users' : 'all_admins'
@@ -698,7 +701,6 @@ async function executeLogoutAll() {
   }
 }
 
-// ── Toast notification (lightweight, no dependency) ──
 function showToast(msg) {
   let t = document.getElementById('_adminToast');
   if (!t) {

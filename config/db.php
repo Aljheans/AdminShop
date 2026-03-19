@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/env.php';   // load .env before anything else
+
 $dbFile = __DIR__ . "/../database/database.db";
 
 if (!file_exists(dirname($dbFile))) {
@@ -87,7 +89,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
 )
 ");
 
-// ── Resources (dirt, water, fire, etc.) ──
+// ── Resources ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS resources (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,7 +119,7 @@ CREATE TABLE IF NOT EXISTS factories (
 )
 ");
 
-// ── Factory upgrade costs (resources + coins + time per level) ──
+// ── Factory upgrade costs ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS factory_upgrade_costs (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,7 +133,7 @@ CREATE TABLE IF NOT EXISTS factory_upgrade_costs (
 )
 ");
 
-// ── Resource costs per upgrade level (multiple resources possible) ──
+// ── Resource costs per upgrade level ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS factory_upgrade_resource_costs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,19 +175,17 @@ CREATE TABLE IF NOT EXISTS user_factories (
 
 // ── Migrations: safely add new columns to existing DB ──
 $migrations = [
-    // Original user migrations
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN uid TEXT",
-    // Resources: swap emoji icon → PNG image_url
     "ALTER TABLE resources ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
-    // Factories: swap emoji icon → PNG image_url + upgrade config columns
     "ALTER TABLE factories ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE factories ADD COLUMN cost_multiplier REAL NOT NULL DEFAULT 1.5",
     "ALTER TABLE factories ADD COLUMN base_upgrade_time INTEGER NOT NULL DEFAULT 60",
     "ALTER TABLE factories ADD COLUMN upgrade_time_multiplier REAL NOT NULL DEFAULT 1.5",
-    // Factory upgrade costs: add time per level
     "ALTER TABLE factory_upgrade_costs ADD COLUMN upgrade_time_seconds INTEGER NOT NULL DEFAULT 0",
+    // Admin permissions: navigation-level access controls
+    "ALTER TABLE admin_permissions ADD COLUMN can_settings INTEGER NOT NULL DEFAULT 0",
 ];
 foreach ($migrations as $sql) {
     try { $conn->exec($sql); } catch (Exception $e) {}
@@ -197,7 +197,6 @@ foreach ($missing as $u) {
     if ($u['role'] === 'admin') {
         $uid = '0001';
     } else {
-        // Generate unique 4-digit code not already used
         do {
             $uid = str_pad(random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
             $exists = $conn->prepare("SELECT COUNT(*) FROM users WHERE uid = :uid");
@@ -223,7 +222,7 @@ if ($stmt->fetch(PDO::FETCH_ASSOC)['c'] == 0) {
     ")->execute([':pw' => $password]);
 }
 
-// ── Default admin (if no other admin exists) ──
+// ── Default admin ──
 $stmt = $conn->query("SELECT COUNT(*) as c FROM users WHERE username='admin'");
 if ($stmt->fetch(PDO::FETCH_ASSOC)['c'] == 0) {
     $password = password_hash(getenv('ADMIN_PASSWORD') ?: 'ChangeMe!', PASSWORD_BCRYPT);

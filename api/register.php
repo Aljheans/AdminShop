@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../config/rate_limit.php';
+rate_limit('register', 10, 60);
 header("Content-Type: application/json");
 require_once("../config/db.php");
 

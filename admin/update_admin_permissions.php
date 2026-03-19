@@ -8,12 +8,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userId      = (int)($_POST['user_id'] ?? 0);
     $canUserdata = isset($_POST['can_userdata']) ? 1 : 0;
     $canActivity = isset($_POST['can_activity']) ? 1 : 0;
+    $canSettings = isset($_POST['can_settings']) ? 1 : 0;
 
     if (!$userId) {
         header("Location: index.php?section=admins&error=Invalid+user"); exit;
     }
 
-    // Cannot modify superadmin permissions
     $target = $conn->prepare("SELECT username, role FROM users WHERE id = :id");
     $target->execute([':id' => $userId]);
     $target = $target->fetch(PDO::FETCH_ASSOC);
@@ -23,15 +23,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $conn->prepare("
-        INSERT INTO admin_permissions (user_id, can_userdata, can_activity)
-        VALUES (:uid, :cu, :ca)
+        INSERT INTO admin_permissions (user_id, can_userdata, can_activity, can_settings)
+        VALUES (:uid, :cu, :ca, :cs)
         ON CONFLICT(user_id) DO UPDATE SET
             can_userdata = :cu,
-            can_activity = :ca
-    ")->execute([':uid' => $userId, ':cu' => $canUserdata, ':ca' => $canActivity]);
+            can_activity = :ca,
+            can_settings = :cs
+    ")->execute([
+        ':uid' => $userId,
+        ':cu'  => $canUserdata,
+        ':ca'  => $canActivity,
+        ':cs'  => $canSettings,
+    ]);
 
     log_activity($conn, $adminName, 'Updated admin permissions', $target['username'],
-        "userdata=$canUserdata, activity=$canActivity");
+        "userdata=$canUserdata, activity=$canActivity, settings=$canSettings");
 
     header("Location: index.php?section=admins&success=Permissions+updated"); exit;
 }
