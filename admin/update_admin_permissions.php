@@ -9,6 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $canUserdata = isset($_POST['can_userdata']) ? 1 : 0;
     $canActivity = isset($_POST['can_activity']) ? 1 : 0;
     $canSettings = isset($_POST['can_settings']) ? 1 : 0;
+    $canSales    = isset($_POST['can_sales'])    ? 1 : 0;
 
     if (!$userId) {
         header("Location: index.php?section=admins&error=Invalid+user"); exit;
@@ -23,21 +24,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $conn->prepare("
-        INSERT INTO admin_permissions (user_id, can_userdata, can_activity, can_settings)
-        VALUES (:uid, :cu, :ca, :cs)
+        INSERT INTO admin_permissions (user_id, can_userdata, can_activity, can_settings, can_sales)
+        VALUES (:uid, :cu, :ca, :cs, :csl)
         ON CONFLICT(user_id) DO UPDATE SET
             can_userdata = :cu,
             can_activity = :ca,
-            can_settings = :cs
+            can_settings = :cs,
+            can_sales    = :csl
     ")->execute([
         ':uid' => $userId,
         ':cu'  => $canUserdata,
         ':ca'  => $canActivity,
         ':cs'  => $canSettings,
+        ':csl' => $canSales,
     ]);
 
     log_activity($conn, $adminName, 'Updated admin permissions', $target['username'],
-        "userdata=$canUserdata, activity=$canActivity, settings=$canSettings");
+        "userdata=$canUserdata, activity=$canActivity, settings=$canSettings, sales=$canSales");
 
     header("Location: index.php?section=admins&success=Permissions+updated"); exit;
 }

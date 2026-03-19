@@ -186,6 +186,7 @@ $migrations = [
     "ALTER TABLE factory_upgrade_costs ADD COLUMN upgrade_time_seconds INTEGER NOT NULL DEFAULT 0",
     // Admin permissions: navigation-level access controls
     "ALTER TABLE admin_permissions ADD COLUMN can_settings INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE admin_permissions ADD COLUMN can_sales INTEGER NOT NULL DEFAULT 0",  // ← ADD THIS
 ];
 foreach ($migrations as $sql) {
     try { $conn->exec($sql); } catch (Exception $e) {}

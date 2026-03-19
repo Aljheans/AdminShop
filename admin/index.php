@@ -16,13 +16,13 @@ $adminRole = $_SESSION['role']     ?? 'admin';
 $isSuperadmin = ($adminRole === 'superadmin');
 
 // ── Resolve current admin's permissions ──
-$myPerms = ['can_userdata' => 1, 'can_activity' => 1, 'can_settings' => 1]; // superadmin: full access
+$myPerms = ['can_userdata' => 1, 'can_activity' => 1, 'can_settings' => 1, 'can_sales' => 1]; // superadmin: full access
 if (!$isSuperadmin) {
     $myId = $_SESSION['user_id'] ?? 0;
-    $p = $conn->prepare("SELECT can_userdata, can_activity, can_settings FROM admin_permissions WHERE user_id = :id");
+    $p = $conn->prepare("SELECT can_userdata, can_activity, can_settings, can_sales FROM admin_permissions WHERE user_id = :id");
     $p->execute([':id' => $myId]);
     $row = $p->fetch(PDO::FETCH_ASSOC);
-    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0, 'can_settings' => 0];
+    $myPerms = $row ?: ['can_userdata' => 0, 'can_activity' => 0, 'can_settings' => 0, 'can_sales' => 0];
 }
 
 /* ── API CHECK ── */
@@ -55,6 +55,10 @@ if (!$isSuperadmin) {
     if ($section === 'activity' && !$myPerms['can_activity']) {
         $section = 'admins';
     }
+    // Sales: only if has can_sales
+    if ($section === 'sales' && !$myPerms['can_sales']) {
+        $section = 'admins';
+    }
 }
 
 /* ── USER MANAGEMENT — only role='user' rows ── */
@@ -81,7 +85,8 @@ $adminsList = $conn->query("
     SELECT u.id, u.username, u.email, u.uid, u.role,
            COALESCE(p.can_userdata,0) AS can_userdata,
            COALESCE(p.can_activity,0) AS can_activity,
-           COALESCE(p.can_settings,0) AS can_settings
+           COALESCE(p.can_settings,0) AS can_settings,
+           COALESCE(p.can_sales,0) AS can_sales
     FROM users u
     LEFT JOIN admin_permissions p ON p.user_id = u.id
     WHERE u.role IN ('admin','superadmin')
@@ -205,6 +210,13 @@ function imgSrc(string $url): string {
     </a>
     <?php endif; ?>
 
+    <?php if($isSuperadmin || $myPerms['can_sales']): ?>
+    <a href="?section=sales" class="sidenav-item <?= $section==='sales'?'active':'' ?>">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Sales
+    </a>
+    <?php endif; ?>
+
     <?php if($isSuperadmin || $myPerms['can_settings']): ?>
     <a href="?section=settings" class="sidenav-item <?= $section==='settings'?'active':'' ?>">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -223,7 +235,8 @@ function imgSrc(string $url): string {
 <!-- MAIN -->
 <main class="main-content">
 
-  <!-- STAT CARDS -->
+  <!-- STAT CARDS — hidden in Sales Management -->
+  <?php if($section !== 'sales'): ?>
   <div class="stats-grid">
     <div class="stat-card">
       <div class="stat-icon purple">
@@ -244,6 +257,7 @@ function imgSrc(string $url): string {
       <div><div class="stat-label">Date</div><div class="stat-value" style="font-size:18px"><?= date('l') ?></div></div>
     </div>
   </div>
+  <?php endif; ?>
 
   <!-- Flash -->
   <?php if(!empty($_GET['error'])): ?>
@@ -302,6 +316,7 @@ function imgSrc(string $url): string {
           <span class="role-badge <?= $c ?>"><?= htmlspecialchars($r) ?></span>
         </td>
         <td>
+          <?php if($row['role']!=='superadmin'): ?>
           <button class="btn-icon" title="Edit" onclick="openEditModal(<?= $row['id'] ?>,'<?= addslashes($row['username']) ?>','<?= addslashes($row['email']) ?>','<?= addslashes($row['role']) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
@@ -312,6 +327,9 @@ function imgSrc(string $url): string {
             onclick="forceLogoutUser(<?= $row['id'] ?>,'<?= addslashes($row['username']) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
+          <?php else: ?>
+          <span style="font-size:11px;color:var(--muted)">protected</span>
+          <?php endif; ?>
         </td>
       </tr>
       <?php endforeach; ?>
@@ -366,6 +384,7 @@ function imgSrc(string $url): string {
           <th>Users Data</th>
           <th>Activity Logs</th>
           <th>Settings</th>
+          <th>Sales</th>
           <?php if($isSuperadmin): ?><th>Save</th><?php endif; ?>
         </tr>
       </thead>
@@ -384,6 +403,7 @@ function imgSrc(string $url): string {
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
           <td><span class="perm-full">✓ Full</span></td>
+          <td><span class="perm-full">✓ Full</span></td>
           <?php if($isSuperadmin): ?><td><span style="font-size:11px;color:var(--muted)">—</span></td><?php endif; ?>
         <?php elseif($isSuperadmin): ?>
           <form method="POST" action="update_admin_permissions.php" style="display:contents">
@@ -391,12 +411,14 @@ function imgSrc(string $url): string {
             <td><label class="checkbox-label"><input type="checkbox" name="can_userdata" value="1" <?= $a['can_userdata']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_activity" value="1" <?= $a['can_activity']?'checked':'' ?>></label></td>
             <td><label class="checkbox-label"><input type="checkbox" name="can_settings" value="1" <?= $a['can_settings']?'checked':'' ?>></label></td>
+            <td><label class="checkbox-label"><input type="checkbox" name="can_sales" value="1" <?= $a['can_sales']?'checked':'' ?>></label></td>
             <td><button type="submit" class="btn btn-dark" style="padding:5px 12px;font-size:12px">Save</button></td>
           </form>
         <?php else: ?>
           <td><?= $a['can_userdata'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_activity'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_settings'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
+          <td><?= $a['can_sales'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
         <?php endif; ?>
       </tr>
       <?php endforeach; ?>
@@ -435,11 +457,14 @@ function imgSrc(string $url): string {
       <?php foreach($activityLog as $entry): ?>
       <tr>
         <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($entry['id']) ?></td>
-        <td><span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span></td>
-        <td><span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span></td>
+        <td>
+          <span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span>
+        </td>
+        <td>
+          <span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span>
+        </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($entry['target'] ?? '—') ?></td>
-        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
+        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
           <?= htmlspecialchars($entry['detail'] ?? '—') ?>
         </td>
         <td style="color:var(--muted);font-size:12px;white-space:nowrap"><?= htmlspecialchars($entry['logged_at']) ?></td>
@@ -455,6 +480,45 @@ function imgSrc(string $url): string {
     </div>
     <?php endif; ?>
     <?php endif; ?>
+  </div>
+
+  <!-- ══════════ SALES MANAGEMENT ══════════ -->
+  <?php elseif($section==='sales'): ?>
+
+  <?php
+  $salesSubs = [
+      'overview'     => ['label' => 'Sales Overview',        'icon' => '<path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>'],
+      'admin-salary' => ['label' => 'Admin Salary',          'icon' => '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'],
+      'catered'      => ['label' => 'Total Ordered Catered', 'icon' => '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'],
+      'denied'       => ['label' => 'Total Ordered Denied',  'icon' => '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'],
+      'tickets'      => ['label' => 'Tickets',               'icon' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/>'],
+      'orders'       => ['label' => 'Orders',                'icon' => '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>'],
+  ];
+  $sub = $_GET['sub'] ?? 'overview';
+  if (!array_key_exists($sub, $salesSubs)) $sub = 'overview';
+  ?>
+
+  <!-- Sales Sub-navigation -->
+  <div class="sales-subnav">
+    <?php foreach($salesSubs as $key => $info): ?>
+    <a href="?section=sales&sub=<?= $key ?>" class="sales-subnav-item <?= $sub === $key ? 'active' : '' ?>">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><?= $info['icon'] ?></svg>
+      <?= $info['label'] ?>
+    </a>
+    <?php endforeach; ?>
+  </div>
+
+  <!-- Sales Content Placeholder -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-header">
+      <span class="card-title"><?= $salesSubs[$sub]['label'] ?></span>
+      <span style="font-size:12px;color:var(--muted)">Coming soon</span>
+    </div>
+    <div style="padding:60px 32px;text-align:center;color:var(--muted)">
+      <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 14px;display:block;opacity:.4"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      <div style="font-size:14px;font-weight:500;margin-bottom:6px"><?= $salesSubs[$sub]['label'] ?></div>
+      <div style="font-size:13px">Content for this section hasn't been added yet.</div>
+    </div>
   </div>
 
   <!-- ══════════ SETTINGS ══════════ -->
