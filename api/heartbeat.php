@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . "/../config/gateway_guard.php";
+
 require_once __DIR__ . '/../config/rate_limit.php';
 rate_limit('heartbeat', 30, 60);
 header('Content-Type: application/json');

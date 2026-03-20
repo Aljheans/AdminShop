@@ -1,0 +1,34 @@
+# ── AdminShop API — Gateway-only access ──
+# Block all direct browser/curl access.
+# The PHP gateway_guard.php does the real key check;
+# this .htaccess adds a second layer at the Apache level.
+
+Options -Indexes
+ServerSignature Off
+
+# Block requests missing the X-Internal-Key header entirely.
+# (Apache can't check the *value* — that's PHP's job — but we
+#  can at least require the header is present.)
+RewriteEngine On
+
+# Allow OPTIONS preflight for CORS
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^ - [L]
+
+# Require the gateway header to be present
+RewriteCond %{HTTP:X-Internal-Key} ^$
+RewriteRule ^ - [F,L]
+
+# Block common attack patterns in the URL
+RewriteCond %{QUERY_STRING} (\.\./|\.\.\\) [NC]
+RewriteRule ^ - [F,L]
+
+# Deny access to sensitive config files if somehow exposed
+<FilesMatch "\.(env|log|bak|sql|sqlite|db)$">
+    Require all denied
+</FilesMatch>
+
+# Force JSON content-type errors (no HTML error pages leaking server info)
+ErrorDocument 403 '{"status":"error","message":"Forbidden"}'
+ErrorDocument 404 '{"status":"error","message":"Not found"}'
+ErrorDocument 500 '{"status":"error","message":"Server error"}'

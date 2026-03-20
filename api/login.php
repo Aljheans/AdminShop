@@ -1,7 +1,8 @@
 <?php
+require_once __DIR__ . "/../config/gateway_guard.php";
+header('Content-Type: application/json');
 require_once __DIR__ . '/../config/rate_limit.php';
 rate_limit('login', 5, 60);
-header('Content-Type: application/json');
 
 $data     = json_decode(file_get_contents('php://input'), true);
 $username = $data['username'] ?? '';

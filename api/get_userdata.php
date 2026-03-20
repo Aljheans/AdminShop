@@ -1,6 +1,12 @@
 <?php
+require_once __DIR__ . "/../config/gateway_guard.php";
+
 require_once __DIR__ . '/../config/rate_limit.php';
 rate_limit('get_userdata', 120, 60);
+/**
+ * api/get_userdata.php
+ * Called by FastAPI GET /userdata (internal, server-to-server).
+ */
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 

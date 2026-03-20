@@ -1,6 +1,21 @@
 <?php
+require_once __DIR__ . "/../config/gateway_guard.php";
+
 require_once __DIR__ . '/../config/rate_limit.php';
-rate_limit('reset_password', 10, 60);
+rate_limit('reset_password', 30, 60);
+/**
+ * api/reset_password.php
+ *
+ * POST body: { "user_id": 5 }
+ *
+ * Generates a random 6-digit code, sets it as the user's new password,
+ * logs it in the password_reset_log table, and returns it to the dashboard.
+ *
+ * Response:
+ *   { "status": "success", "username": "john", "code": "482910", "reset_at": "2026-03-04 11:30:00" }
+ *   { "status": "error",   "message": "..." }
+ */
+
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/activity.php';
