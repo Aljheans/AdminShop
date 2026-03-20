@@ -766,23 +766,20 @@ function imgSrc(string $url): string {
     No item groups yet. <a href="?section=inv-item-group" style="color:var(--blue)">Create a group</a> to see stock overview.
   </div>
   <?php else: ?>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
     <?php foreach($groupTotals as $gt): ?>
-    <div class="card card-body" style="display:flex;flex-direction:column;gap:12px">
+    <div class="card card-body" style="display:flex;align-items:center;gap:14px">
       <?php if($gt['image']): ?>
-        <img src="<?= htmlspecialchars($gt['image']) ?>" style="width:56px;height:56px;object-fit:contain;border-radius:8px;border:1px solid var(--border)">
+        <img src="<?= htmlspecialchars($gt['image']) ?>" style="width:48px;height:48px;object-fit:contain;border-radius:8px;border:1px solid var(--border);flex-shrink:0">
       <?php else: ?>
-        <div style="width:56px;height:56px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4">
-          <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        <div style="width:48px;height:48px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4;flex-shrink:0">
+          <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
         </div>
       <?php endif; ?>
       <div>
         <div style="font-weight:600;font-size:13.5px;margin-bottom:3px"><?= htmlspecialchars($gt['title']) ?></div>
-        <div style="font-size:12px;color:var(--muted)"><?= $gt['items'] ?> item<?= $gt['items']!=1?'s':'' ?></div>
-      </div>
-      <div style="display:flex;align-items:baseline;gap:6px">
-        <span style="font-size:30px;font-weight:800;letter-spacing:-1px"><?= number_format($gt['total']) ?></span>
-        <span style="font-size:12px;color:var(--muted)">total stock</span>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-.5px;line-height:1"><?= $gt['items'] ?></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">item<?= $gt['items']!=1?'s':'' ?></div>
       </div>
     </div>
     <?php endforeach; ?>
@@ -844,6 +841,15 @@ function imgSrc(string $url): string {
   <!-- ══════════ INVENTORY STOCKS ══════════ -->
   <?php elseif($section==='inv-stocks'): ?>
 
+  <?php
+  // Active group tab — default to first group
+  $activeGroupId = (int)($_GET['group'] ?? ($itemGroups[0]['id'] ?? 0));
+  $activeGroup   = null;
+  foreach ($itemGroups as $g) { if ($g['id'] == $activeGroupId) { $activeGroup = $g; break; } }
+  $activeItems = [];
+  foreach ($inventoryItems as $item) { if ($item['group_id'] == $activeGroupId) $activeItems[] = $item; }
+  ?>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title">Inventory Stocks</span>
@@ -852,25 +858,43 @@ function imgSrc(string $url): string {
         Add Item
       </button>
     </div>
-    <?php if(empty($inventoryItems)): ?>
-      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No items yet. Click "Add Item" to get started.</div>
-    <?php else:
-      $byGroup = [];
-      foreach ($inventoryItems as $item) { $byGroup[$item['group_title']][] = $item; }
-    ?>
-    <?php foreach($byGroup as $grpTitle => $items): ?>
-    <div style="padding:12px 20px 6px;border-bottom:1px solid var(--border)">
-      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)"><?= htmlspecialchars($grpTitle) ?></span>
+
+    <?php if(empty($itemGroups)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No groups yet. <a href="?section=inv-item-group" style="color:var(--blue)">Create a group</a> first.</div>
+    <?php else: ?>
+
+    <!-- Group Tab Navigation -->
+    <div class="inv-group-tabs">
+      <?php foreach($itemGroups as $g): ?>
+      <?php
+        $tabCount = 0;
+        foreach ($inventoryItems as $it) { if ($it['group_id'] == $g['id']) $tabCount++; }
+      ?>
+      <a href="?section=inv-stocks&group=<?= $g['id'] ?>"
+         class="inv-group-tab <?= $g['id'] == $activeGroupId ? 'active' : '' ?>">
+        <?php if($g['image_url']): ?>
+          <img src="<?= htmlspecialchars($g['image_url']) ?>" style="width:20px;height:20px;object-fit:contain;border-radius:4px;flex-shrink:0">
+        <?php endif; ?>
+        <span><?= htmlspecialchars($g['title']) ?></span>
+        <span class="inv-tab-count"><?= $tabCount ?></span>
+      </a>
+      <?php endforeach; ?>
     </div>
+
+    <!-- Items for active group -->
+    <?php if(empty($activeItems)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">
+        No items in <strong><?= htmlspecialchars($activeGroup['title'] ?? '') ?></strong> yet. Click "Add Item" to add one.
+      </div>
+    <?php else: ?>
     <table class="data-table">
-      <thead><tr><th>Title</th><th>Description 1</th><th>Description 2</th><th>Stock</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Title</th><th>Description 1</th><th>Description 2</th><th>Actions</th></tr></thead>
       <tbody>
-      <?php foreach($items as $item): ?>
+      <?php foreach($activeItems as $item): ?>
       <tr>
         <td style="font-weight:500"><?= htmlspecialchars($item['title']) ?></td>
         <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description1'] ?: '—') ?></td>
         <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description2'] ?: '—') ?></td>
-        <td><span class="uid-badge"><?= number_format($item['stock']) ?></span></td>
         <td>
           <button class="btn-icon" title="Edit"
             onclick="openEditItemModal(<?= $item['id'] ?>,<?= $item['group_id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>','<?= addslashes(htmlspecialchars($item['description1'])) ?>','<?= addslashes(htmlspecialchars($item['description2'])) ?>',<?= (int)$item['stock'] ?>)">
@@ -885,7 +909,7 @@ function imgSrc(string $url): string {
       <?php endforeach; ?>
       </tbody>
     </table>
-    <?php endforeach; ?>
+    <?php endif; ?>
     <?php endif; ?>
   </div>
 
@@ -1122,8 +1146,6 @@ function imgSrc(string $url): string {
     <input type="text" name="description1" placeholder="e.g. Brand, model" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
     <label>Description 2</label>
     <input type="text" name="description2" placeholder="e.g. Colour, size" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Initial Stock</label>
-    <input type="number" name="stock" value="0" min="0" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:2px">
     <div class="modal-footer" style="margin-top:14px">
       <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
       <button type="submit" class="btn btn-dark">Save Item</button>
