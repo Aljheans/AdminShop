@@ -195,6 +195,16 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     FOREIGN KEY (group_id) REFERENCES item_groups(id) ON DELETE CASCADE
 )
 ");
+// ── Item Variants ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS inventory_item_variants (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id    INTEGER NOT NULL,
+    label      TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+)
+");
 // ── Migrations: safely add new columns to existing DB ──
 $migrations = [
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",

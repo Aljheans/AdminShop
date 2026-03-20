@@ -187,6 +187,13 @@ if ($isSuperadmin) {
             JOIN item_groups g ON g.id = i.group_id
             ORDER BY g.title ASC, i.title ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
+        // Attach variants to each item
+        foreach ($inventoryItems as &$invItem) {
+            $vStmt = $conn->prepare("SELECT label FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+            $vStmt->execute([':id' => $invItem['id']]);
+            $invItem['variants'] = $vStmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+        unset($invItem);
     } catch (Exception $e) {}
 }
 
@@ -811,28 +818,28 @@ function imgSrc(string $url): string {
     <?php if(empty($itemGroups)): ?>
       <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No groups yet. Click "Add Group" to create one.</div>
     <?php else: ?>
-    <table class="data-table">
-      <thead><tr><th>Image</th><th>Title</th><th>Items</th><th>Created</th><th>Actions</th></tr></thead>
-      <tbody>
-      <?php foreach($itemGroups as $g):
-        $iStmt = $conn->prepare("SELECT COUNT(*) FROM inventory_items WHERE group_id=:gid");
-        $iStmt->execute([':gid'=>$g['id']]);
-        $iCount = (int)$iStmt->fetchColumn();
-      ?>
-      <tr>
-        <td>
+    <?php foreach($itemGroups as $g):
+      $grpItems = $conn->prepare("SELECT i.*, GROUP_CONCAT(v.label, '|||') AS variant_labels FROM inventory_items i LEFT JOIN inventory_item_variants v ON v.item_id = i.id WHERE i.group_id=:gid GROUP BY i.id ORDER BY i.title ASC");
+      $grpItems->execute([':gid'=>$g['id']]);
+      $grpItems = $grpItems->fetchAll(PDO::FETCH_ASSOC);
+    ?>
+    <div class="inv-group-block">
+      <!-- Group header row -->
+      <div class="inv-group-header-row">
+        <div style="display:flex;align-items:center;gap:12px">
           <?php if($g['image_url']): ?>
-            <img src="<?= htmlspecialchars($g['image_url']) ?>" style="width:40px;height:40px;object-fit:contain;border-radius:6px;border:1px solid var(--border)">
+            <img src="<?= htmlspecialchars($g['image_url']) ?>" style="width:36px;height:36px;object-fit:contain;border-radius:6px;border:1px solid var(--border);flex-shrink:0">
           <?php else: ?>
-            <div style="width:40px;height:40px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <div style="width:36px;height:36px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4;flex-shrink:0">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
             </div>
           <?php endif; ?>
-        </td>
-        <td style="font-weight:500"><?= htmlspecialchars($g['title']) ?></td>
-        <td><span class="uid-badge"><?= $iCount ?></span></td>
-        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($g['created_at']) ?></td>
-        <td>
+          <div>
+            <div style="font-weight:700;font-size:14px"><?= htmlspecialchars($g['title']) ?></div>
+            <div style="font-size:11px;color:var(--muted)"><?= count($grpItems) ?> item<?= count($grpItems)!=1?'s':'' ?> · <?= htmlspecialchars($g['created_at']) ?></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
           <button class="btn-icon" title="Edit"
             onclick="openEditGroupModal(<?= $g['id'] ?>,'<?= addslashes(htmlspecialchars($g['title'])) ?>','<?= addslashes($g['image_url']) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -841,11 +848,48 @@ function imgSrc(string $url): string {
             onclick="confirmDeleteGroup(<?= $g['id'] ?>,'<?= addslashes(htmlspecialchars($g['title'])) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
-        </td>
-      </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
+        </div>
+      </div>
+      <!-- Items within this group -->
+      <?php if(!empty($grpItems)): ?>
+      <div class="inv-items-list">
+        <?php foreach($grpItems as $gi):
+          $gVariants = $gi['variant_labels'] ? explode('|||', $gi['variant_labels']) : [];
+        ?>
+        <div class="inv-item-row">
+          <div>
+            <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($gi['title']) ?></div>
+            <?php if($gi['description1'] || $gi['description2']): ?>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">
+              <?= htmlspecialchars($gi['description1']) ?><?= $gi['description1']&&$gi['description2'] ? ' · ' : '' ?><?= htmlspecialchars($gi['description2']) ?>
+            </div>
+            <?php endif; ?>
+            <?php if(!empty($gVariants)): ?>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+              <?php foreach($gVariants as $vl): ?>
+              <span class="inv-variant-tag"><?= htmlspecialchars($vl) ?></span>
+              <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+          </div>
+          <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+            <button class="btn-icon" title="Edit"
+              onclick="openEditItemModalFull(<?= $gi['id'] ?>,<?= $gi['group_id'] ?>,'<?= addslashes(htmlspecialchars($gi['title'])) ?>','<?= addslashes(htmlspecialchars($gi['description1'])) ?>','<?= addslashes(htmlspecialchars($gi['description2'])) ?>',<?= (int)$gi['stock'] ?>,<?= htmlspecialchars(json_encode($gVariants)) ?>)">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="btn-icon red" title="Delete"
+              onclick="confirmDeleteItem(<?= $gi['id'] ?>,'<?= addslashes(htmlspecialchars($gi['title'])) ?>')">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+      <?php else: ?>
+      <div style="padding:12px 20px;font-size:12px;color:var(--muted)">No items in this group yet.</div>
+      <?php endif; ?>
+    </div>
+    <?php endforeach; ?>
     <?php endif; ?>
   </div>
 
@@ -870,29 +914,38 @@ function imgSrc(string $url): string {
     <div style="padding:12px 20px 6px;border-bottom:1px solid var(--border)">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)"><?= htmlspecialchars($grpTitle) ?></span>
     </div>
-    <table class="data-table">
-      <thead><tr><th>Title</th><th>Description 1</th><th>Description 2</th><th>Stock</th><th>Actions</th></tr></thead>
-      <tbody>
+    <div class="inv-items-list inv-items-list--stocks">
       <?php foreach($items as $item): ?>
-      <tr>
-        <td style="font-weight:500"><?= htmlspecialchars($item['title']) ?></td>
-        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description1'] ?: '—') ?></td>
-        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description2'] ?: '—') ?></td>
-        <td><span class="uid-badge"><?= number_format($item['stock']) ?></span></td>
-        <td>
+      <div class="inv-item-row">
+        <div>
+          <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($item['title']) ?></div>
+          <?php if($item['description1'] || $item['description2']): ?>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:2px">
+            <?= htmlspecialchars($item['description1']) ?><?= $item['description1']&&$item['description2']?' · ':'' ?><?= htmlspecialchars($item['description2']) ?>
+          </div>
+          <?php endif; ?>
+          <?php if(!empty($item['variants'])): ?>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+            <?php foreach($item['variants'] as $vl): ?>
+            <span class="inv-variant-tag"><?= htmlspecialchars($vl) ?></span>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+          <span class="uid-badge" style="margin-right:4px"><?= number_format($item['stock']) ?></span>
           <button class="btn-icon" title="Edit"
-            onclick="openEditItemModal(<?= $item['id'] ?>,<?= $item['group_id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>','<?= addslashes(htmlspecialchars($item['description1'])) ?>','<?= addslashes(htmlspecialchars($item['description2'])) ?>',<?= (int)$item['stock'] ?>)">
+            onclick="openEditItemModalFull(<?= $item['id'] ?>,<?= $item['group_id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>','<?= addslashes(htmlspecialchars($item['description1'])) ?>','<?= addslashes(htmlspecialchars($item['description2'])) ?>',<?= (int)$item['stock'] ?>,<?= htmlspecialchars(json_encode($item['variants'] ?? [])) ?>)">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
           <button class="btn-icon red" title="Delete"
             onclick="confirmDeleteItem(<?= $item['id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>')">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
-        </td>
-      </tr>
+        </div>
+      </div>
       <?php endforeach; ?>
-      </tbody>
-    </table>
+    </div>
     <?php endforeach; ?>
     <?php endif; ?>
   </div>
@@ -1113,26 +1166,35 @@ function imgSrc(string $url): string {
 
 <!-- Add Item Modal -->
 <div class="modal" id="addItemModal">
-<div class="modal-box">
+<div class="modal-box" style="max-width:480px">
   <h3>Add Inventory Item</h3>
   <form method="post" action="save_inventory_item.php">
     <input type="hidden" name="id" value="0">
-    <label>Group</label>
-    <select name="group_id" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label class="field-label">Group</label>
+    <select name="group_id" required class="field-input" style="margin-bottom:14px">
       <option value="">— Select group —</option>
       <?php foreach($itemGroups as $g): ?>
       <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
       <?php endforeach; ?>
     </select>
-    <label>Title</label>
-    <input type="text" name="title" placeholder="Item title" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Description 1</label>
-    <input type="text" name="description1" placeholder="e.g. Brand, model" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Description 2</label>
-    <input type="text" name="description2" placeholder="e.g. Colour, size" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Initial Stock</label>
-    <input type="number" name="stock" value="0" min="0" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:2px">
-    <div class="modal-footer" style="margin-top:14px">
+    <label class="field-label">Title</label>
+    <input type="text" name="title" placeholder="e.g. Netflix Account" required class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Description 1 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+    <input type="text" name="description1" placeholder="e.g. Streaming service" class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Description 2 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+    <input type="text" name="description2" placeholder="e.g. Monthly plan" class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Initial Stock</label>
+    <input type="number" name="stock" value="0" min="0" class="field-input" style="margin-bottom:16px">
+    <label class="field-label">
+      Options / Variants
+      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. "2 devices", "5 profiles", "1 account for all"</span>
+    </label>
+    <div id="addVariantList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="addVariantRow('addVariantList')">
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add option
+    </button>
+    <div class="modal-footer" style="margin-top:16px">
       <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
       <button type="submit" class="btn btn-dark">Save Item</button>
     </div>
@@ -1142,25 +1204,34 @@ function imgSrc(string $url): string {
 
 <!-- Edit Item Modal -->
 <div class="modal" id="editItemModal">
-<div class="modal-box">
+<div class="modal-box" style="max-width:480px">
   <h3>Edit Inventory Item</h3>
   <form method="post" action="save_inventory_item.php">
     <input type="hidden" name="id" id="editItemId">
-    <label>Group</label>
-    <select name="group_id" id="editItemGroup" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label class="field-label">Group</label>
+    <select name="group_id" id="editItemGroup" required class="field-input" style="margin-bottom:14px">
       <?php foreach($itemGroups as $g): ?>
       <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
       <?php endforeach; ?>
     </select>
-    <label>Title</label>
-    <input type="text" name="title" id="editItemTitle" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Description 1</label>
-    <input type="text" name="description1" id="editItemDesc1" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Description 2</label>
-    <input type="text" name="description2" id="editItemDesc2" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
-    <label>Stock</label>
-    <input type="number" name="stock" id="editItemStock" min="0" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:2px">
-    <div class="modal-footer" style="margin-top:14px">
+    <label class="field-label">Title</label>
+    <input type="text" name="title" id="editItemTitle" required class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Description 1</label>
+    <input type="text" name="description1" id="editItemDesc1" class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Description 2</label>
+    <input type="text" name="description2" id="editItemDesc2" class="field-input" style="margin-bottom:14px">
+    <label class="field-label">Stock</label>
+    <input type="number" name="stock" id="editItemStock" min="0" class="field-input" style="margin-bottom:16px">
+    <label class="field-label">
+      Options / Variants
+      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. "2 devices", "5 profiles"</span>
+    </label>
+    <div id="editVariantList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="addVariantRow('editVariantList')">
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add option
+    </button>
+    <div class="modal-footer" style="margin-top:16px">
       <button type="button" class="btn btn-ghost" onclick="closeModal('editItemModal')">Cancel</button>
       <button type="submit" class="btn btn-dark">Update Item</button>
     </div>
@@ -1192,7 +1263,12 @@ function toggleSalesSubs(cb, adminId) {
   const subs = document.getElementById('sales-subs-' + adminId);
   if (subs) subs.style.display = cb.checked ? 'block' : 'none';
 }
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'addItemModal') {
+    document.getElementById('addVariantList').innerHTML = '';
+  }
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 async function post(url, data) {
   const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
@@ -1437,15 +1513,38 @@ function confirmDeleteGroup(id, title) {
   openModal('deleteGroupModal');
 }
 
+// ── Inventory: variant rows ──
+function addVariantRow(listId, value = '') {
+  const list = document.getElementById(listId);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:6px';
+  row.innerHTML = `
+    <input type="text" name="variants[]" value="${esc(value)}" placeholder="e.g. 2 devices"
+      style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px">
+    <button type="button" onclick="this.parentElement.remove()"
+      style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--red);cursor:pointer;font-size:15px;line-height:1">×</button>
+  `;
+  list.appendChild(row);
+  row.querySelector('input').focus();
+}
+
 // ── Inventory: Item modals ──
-function openEditItemModal(id, groupId, title, desc1, desc2, stock) {
+function openEditItemModalFull(id, groupId, title, desc1, desc2, stock, variants) {
   document.getElementById('editItemId').value    = id;
   document.getElementById('editItemGroup').value = groupId;
   document.getElementById('editItemTitle').value = title;
   document.getElementById('editItemDesc1').value = desc1;
   document.getElementById('editItemDesc2').value = desc2;
   document.getElementById('editItemStock').value = stock;
+  // Rebuild variant rows
+  const list = document.getElementById('editVariantList');
+  list.innerHTML = '';
+  (variants || []).forEach(v => addVariantRow('editVariantList', v));
   openModal('editItemModal');
+}
+// Keep old name as alias for backwards compat
+function openEditItemModal(id, groupId, title, desc1, desc2, stock) {
+  openEditItemModalFull(id, groupId, title, desc1, desc2, stock, []);
 }
 function confirmDeleteItem(id, title) {
   document.getElementById('deleteItemName').textContent = title;

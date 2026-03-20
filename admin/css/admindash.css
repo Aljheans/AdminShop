@@ -1199,3 +1199,48 @@ body {
   align-items: center;
   gap: 6px;
 }
+/* ── Inventory Variant Tags ── */
+.inv-variant-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(124,107,255,.1);
+  color: var(--purple);
+  border: 1px solid rgba(124,107,255,.2);
+  white-space: nowrap;
+}
+
+/* ── Inventory Group Block (Item Group section) ── */
+.inv-group-block {
+  border-bottom: 1px solid var(--border);
+}
+.inv-group-block:last-child { border-bottom: none; }
+
+.inv-group-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Inventory Item Rows ── */
+.inv-items-list {
+  display: flex;
+  flex-direction: column;
+}
+.inv-item-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.inv-item-row:last-child { border-bottom: none; }
+.inv-item-row:hover { background: rgba(124,107,255,.03); }
+.inv-items-list--stocks .inv-item-row { padding: 12px 24px; }
