@@ -11,7 +11,7 @@ try {
     $result = [];
     foreach ($groups as $g) {
         $iStmt = $conn->prepare("
-            SELECT i.id, i.title, i.description1, i.description2
+            SELECT i.id, i.title, i.stock
             FROM inventory_items i
             WHERE i.group_id = :gid
             ORDER BY i.title ASC
