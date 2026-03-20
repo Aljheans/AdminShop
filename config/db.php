@@ -172,7 +172,29 @@ CREATE TABLE IF NOT EXISTS user_factories (
     FOREIGN KEY (factory_id) REFERENCES factories(id) ON DELETE CASCADE
 )
 ");
+// ── Item Groups ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS item_groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      TEXT NOT NULL,
+    image_url  TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+");
 
+// ── Inventory Items ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id     INTEGER NOT NULL,
+    title        TEXT NOT NULL,
+    description1 TEXT NOT NULL DEFAULT '',
+    description2 TEXT NOT NULL DEFAULT '',
+    stock        INTEGER NOT NULL DEFAULT 0,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES item_groups(id) ON DELETE CASCADE
+)
+");
 // ── Migrations: safely add new columns to existing DB ──
 $migrations = [
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",

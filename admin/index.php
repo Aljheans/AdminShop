@@ -49,12 +49,16 @@ $section = $_GET['section'] ?? 'user-management';
 
 // Permission gate for non-superadmins
 if (!$isSuperadmin) {
+    // Admins management page: all admins can VIEW (read-only), editing is blocked in the UI
+    // Settings: only if the admin has can_settings permission
     if ($section === 'settings' && !$myPerms['can_settings']) {
         $section = 'user-management';
     }
+    // User management: only if has can_userdata
     if ($section === 'user-management' && !$myPerms['can_userdata']) {
-        $section = 'admins';
+        $section = 'admins'; // fallback to admins (always viewable)
     }
+    // Activity logs: only if has can_activity
     if ($section === 'activity' && !$myPerms['can_activity']) {
         $section = 'admins';
     }
@@ -72,13 +76,13 @@ if (!$isSuperadmin) {
     if (isset($salesSubGate[$section]) && !$myPerms[$salesSubGate[$section]]) {
         $section = 'admins';
     }
-    // If no sales permission at all and trying any sales page
+    // If no sales sub-permission at all and trying any sales page
     if (!$myPerms['can_sales'] && str_starts_with($section, 'sales-')) {
         $section = 'admins';
     }
 }
 
-/* ── USER MANAGEMENT — only role='user' rows ── */
+/* ── USER MANAGEMENT ── */
 $limit      = 5;
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $offset     = ($page - 1) * $limit;
@@ -115,6 +119,10 @@ try {
     ")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {}
 
+
+
+
+
 /* ── ADMINS LIST ── */
 $adminsList = $conn->query("
     SELECT u.id, u.username, u.email, u.uid, u.role, u.is_online,
@@ -131,6 +139,9 @@ $adminsList = $conn->query("
     WHERE u.role IN ('admin','superadmin')
     ORDER BY u.uid ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+
+
 
 /* ── ACTIVITY LOG ── */
 $activityLog = [];
@@ -151,7 +162,27 @@ if ($section === 'activity' || $isSuperadmin || $myPerms['can_activity']) {
     } catch (Exception $e) {}
 }
 
-// Sales section labels
+// Inventory section slugs
+$invSections = ['inv-overview','inv-item-group','inv-stocks'];
+
+// ── Inventory data (superadmin only) ──
+$itemGroups = [];
+$inventoryItems = [];
+if ($isSuperadmin) {
+    try {
+        $itemGroups = $conn->query("SELECT * FROM item_groups ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+    try {
+        $inventoryItems = $conn->query("
+            SELECT i.*, g.title AS group_title, g.image_url AS group_image
+            FROM inventory_items i
+            JOIN item_groups g ON g.id = i.group_id
+            ORDER BY g.title ASC, i.title ASC
+        ")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {}
+}
+
+// Sales section labels (used in permission gate and content rendering)
 $salesLabels = [
     'sales-overview'     => 'Sales Overview',
     'sales-admin-salary' => 'Admin Salary',
@@ -197,10 +228,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['_action']??'')==='db_command
     $section='settings';
 }
 
+// Helper: returns the correct src attribute value for an image_url.
+// Stored values are either a data URI (data:image/...) or a legacy file path.
 function imgSrc(string $url): string {
     if (empty($url)) return '';
-    if (str_starts_with($url, 'data:')) return $url;
-    return '../' . ltrim($url, '/');
+    if (str_starts_with($url, 'data:')) return $url;        // base64 data URI — use as-is
+    return '../' . ltrim($url, '/');                         // legacy file path
 }
 ?>
 <!DOCTYPE html>
@@ -258,6 +291,7 @@ function imgSrc(string $url): string {
     $salesSections    = ['sales-overview','sales-admin-salary','sales-catered','sales-denied','sales-tickets','sales-orders'];
     $inUserMgmt = in_array($section, $userMgmtSections);
     $inSales    = in_array($section, $salesSections);
+    $inInv      = in_array($section, ['inv-overview','inv-item-group','inv-stocks']);
     $showUserGroup  = $isSuperadmin || $myPerms['can_userdata'] || $myPerms['can_activity'];
     $showSalesGroup = $isSuperadmin || $myPerms['can_sales'];
     ?>
@@ -338,6 +372,33 @@ function imgSrc(string $url): string {
           Orders
         </a>
         <?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── Inventory Management (superadmin only) ── -->
+    <?php if($isSuperadmin): ?>
+    <div class="nav-group <?= $inInv ? 'open' : '' ?>" id="grp-inv">
+      <button class="nav-group-header" onclick="toggleGroup('grp-inv')">
+        <span class="nav-group-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Inventory
+        </span>
+        <svg class="nav-chevron" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="nav-group-items">
+        <a href="?section=inv-overview" class="sidenav-item sidenav-child <?= $section==='inv-overview'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Stocks Overview
+        </a>
+        <a href="?section=inv-item-group" class="sidenav-item sidenav-child <?= $section==='inv-item-group'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          Item Group
+        </a>
+        <a href="?section=inv-stocks" class="sidenav-item sidenav-child <?= $section==='inv-stocks'?'active':'' ?>">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          Inventory Stocks
+        </a>
       </div>
     </div>
     <?php endif; ?>
@@ -491,7 +552,6 @@ function imgSrc(string $url): string {
     </table>
   </div>
 
-  <!-- ══════════ ADMINS ══════════ -->
   <?php elseif($section==='admins'): ?>
 
   <?php $adminCount = count(array_filter($adminsList, fn($a) => $a['role']==='admin')); ?>
@@ -542,6 +602,7 @@ function imgSrc(string $url): string {
           <td><span style="font-size:11px;color:var(--muted)">protected</span></td>
           <?php if($isSuperadmin): ?><td><span style="font-size:11px;color:var(--muted)">—</span></td><?php endif; ?>
         <?php elseif($isSuperadmin): ?>
+          <!-- Superadmin: editable checkboxes -->
           <form method="POST" action="update_admin_permissions.php" style="display:contents">
             <input type="hidden" name="user_id" value="<?= $a['id'] ?>">
             <td><label class="checkbox-label"><input type="checkbox" name="can_userdata" value="1" <?= $a['can_userdata']?'checked':'' ?>></label></td>
@@ -565,6 +626,7 @@ function imgSrc(string $url): string {
             <td><button type="submit" class="btn btn-dark" style="padding:5px 12px;font-size:12px">Save</button></td>
           </form>
         <?php else: ?>
+          <!-- Regular admin: read-only view -->
           <td><?= $a['can_userdata'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_activity'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
           <td><?= $a['can_settings'] ? '<span class="perm-on">✓ Yes</span>' : '<span class="perm-off">✗ No</span>' ?></td>
@@ -595,6 +657,7 @@ function imgSrc(string $url): string {
     </div>
     <?php endif; ?>
   </div>
+
 
   <!-- Admin Password Reset Log -->
   <div class="card" style="margin-top:16px">
@@ -632,16 +695,28 @@ function imgSrc(string $url): string {
       <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No activity recorded yet.</div>
     <?php else: ?>
     <table class="data-table">
-      <thead><tr><th>#</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th><th>Time</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Admin</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Detail</th>
+          <th>Time</th>
+        </tr>
+      </thead>
       <tbody>
       <?php foreach($activityLog as $entry): ?>
       <tr>
         <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($entry['id']) ?></td>
-        <td><span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span></td>
-        <td><span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span></td>
+        <td>
+          <span style="font-weight:500;font-size:13px"><?= htmlspecialchars($entry['admin']) ?></span>
+        </td>
+        <td>
+          <span class="activity-action"><?= htmlspecialchars($entry['action']) ?></span>
+        </td>
         <td style="color:var(--muted)"><?= htmlspecialchars($entry['target'] ?? '—') ?></td>
-        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
+        <td style="color:var(--muted);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($entry['detail'] ?? '') ?>">
           <?= htmlspecialchars($entry['detail'] ?? '—') ?>
         </td>
         <td style="color:var(--muted);font-size:12px;white-space:nowrap"><?= htmlspecialchars($entry['logged_at']) ?></td>
@@ -671,6 +746,147 @@ function imgSrc(string $url): string {
       <div style="font-size:14px;font-weight:500;margin-bottom:6px"><?= $salesLabels[$section] ?></div>
       <div style="font-size:13px">Content for this section hasn't been added yet.</div>
     </div>
+  </div>
+
+  <!-- ══════════ STOCKS OVERVIEW ══════════ -->
+  <?php elseif($section==='inv-overview'): ?>
+
+  <?php
+  $groupTotals = [];
+  foreach ($itemGroups as $g) {
+      $cntS = $conn->prepare("SELECT COALESCE(SUM(stock),0) AS total, COUNT(*) AS items FROM inventory_items WHERE group_id=:gid");
+      $cntS->execute([':gid'=>$g['id']]);
+      $cntR = $cntS->fetch(PDO::FETCH_ASSOC);
+      $groupTotals[] = ['title'=>$g['title'], 'image'=>$g['image_url'], 'total'=>(int)$cntR['total'], 'items'=>(int)$cntR['items']];
+  }
+  ?>
+  <?php if(empty($itemGroups)): ?>
+  <div class="card" style="padding:50px;text-align:center;color:var(--muted)">
+    <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 14px;display:block;opacity:.4"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+    No item groups yet. <a href="?section=inv-item-group" style="color:var(--blue)">Create a group</a> to see stock overview.
+  </div>
+  <?php else: ?>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px">
+    <?php foreach($groupTotals as $gt): ?>
+    <div class="card card-body" style="display:flex;flex-direction:column;gap:12px">
+      <?php if($gt['image']): ?>
+        <img src="<?= htmlspecialchars($gt['image']) ?>" style="width:56px;height:56px;object-fit:contain;border-radius:8px;border:1px solid var(--border)">
+      <?php else: ?>
+        <div style="width:56px;height:56px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4">
+          <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+      <?php endif; ?>
+      <div>
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:3px"><?= htmlspecialchars($gt['title']) ?></div>
+        <div style="font-size:12px;color:var(--muted)"><?= $gt['items'] ?> item<?= $gt['items']!=1?'s':'' ?></div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span style="font-size:30px;font-weight:800;letter-spacing:-1px"><?= number_format($gt['total']) ?></span>
+        <span style="font-size:12px;color:var(--muted)">total stock</span>
+      </div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
+
+  <!-- ══════════ ITEM GROUP ══════════ -->
+  <?php elseif($section==='inv-item-group'): ?>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Item Groups</span>
+      <button class="btn btn-dark" onclick="openModal('addGroupModal')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Group
+      </button>
+    </div>
+    <?php if(empty($itemGroups)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No groups yet. Click "Add Group" to create one.</div>
+    <?php else: ?>
+    <table class="data-table">
+      <thead><tr><th>Image</th><th>Title</th><th>Items</th><th>Created</th><th>Actions</th></tr></thead>
+      <tbody>
+      <?php foreach($itemGroups as $g):
+        $iStmt = $conn->prepare("SELECT COUNT(*) FROM inventory_items WHERE group_id=:gid");
+        $iStmt->execute([':gid'=>$g['id']]);
+        $iCount = (int)$iStmt->fetchColumn();
+      ?>
+      <tr>
+        <td>
+          <?php if($g['image_url']): ?>
+            <img src="<?= htmlspecialchars($g['image_url']) ?>" style="width:40px;height:40px;object-fit:contain;border-radius:6px;border:1px solid var(--border)">
+          <?php else: ?>
+            <div style="width:40px;height:40px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;opacity:.4">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+          <?php endif; ?>
+        </td>
+        <td style="font-weight:500"><?= htmlspecialchars($g['title']) ?></td>
+        <td><span class="uid-badge"><?= $iCount ?></span></td>
+        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($g['created_at']) ?></td>
+        <td>
+          <button class="btn-icon" title="Edit"
+            onclick="openEditGroupModal(<?= $g['id'] ?>,'<?= addslashes(htmlspecialchars($g['title'])) ?>','<?= addslashes($g['image_url']) ?>')">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn-icon red" title="Delete"
+            onclick="confirmDeleteGroup(<?= $g['id'] ?>,'<?= addslashes(htmlspecialchars($g['title'])) ?>')">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endif; ?>
+  </div>
+
+  <!-- ══════════ INVENTORY STOCKS ══════════ -->
+  <?php elseif($section==='inv-stocks'): ?>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Inventory Stocks</span>
+      <button class="btn btn-dark" onclick="openModal('addItemModal')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Item
+      </button>
+    </div>
+    <?php if(empty($inventoryItems)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No items yet. Click "Add Item" to get started.</div>
+    <?php else:
+      $byGroup = [];
+      foreach ($inventoryItems as $item) { $byGroup[$item['group_title']][] = $item; }
+    ?>
+    <?php foreach($byGroup as $grpTitle => $items): ?>
+    <div style="padding:12px 20px 6px;border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)"><?= htmlspecialchars($grpTitle) ?></span>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Title</th><th>Description 1</th><th>Description 2</th><th>Stock</th><th>Actions</th></tr></thead>
+      <tbody>
+      <?php foreach($items as $item): ?>
+      <tr>
+        <td style="font-weight:500"><?= htmlspecialchars($item['title']) ?></td>
+        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description1'] ?: '—') ?></td>
+        <td style="color:var(--muted);font-size:12px"><?= htmlspecialchars($item['description2'] ?: '—') ?></td>
+        <td><span class="uid-badge"><?= number_format($item['stock']) ?></span></td>
+        <td>
+          <button class="btn-icon" title="Edit"
+            onclick="openEditItemModal(<?= $item['id'] ?>,<?= $item['group_id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>','<?= addslashes(htmlspecialchars($item['description1'])) ?>','<?= addslashes(htmlspecialchars($item['description2'])) ?>',<?= (int)$item['stock'] ?>)">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn-icon red" title="Delete"
+            onclick="confirmDeleteItem(<?= $item['id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>')">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endforeach; ?>
+    <?php endif; ?>
   </div>
 
   <!-- ══════════ SETTINGS ══════════ -->
@@ -737,12 +953,18 @@ function imgSrc(string $url): string {
     <?php endif; ?>
   </div>
 
+
+
+
+
   <?php endif; ?>
 
 </main>
 </div>
 
 <!-- MODALS -->
+
+
 <div class="modal" id="editModal">
 <div class="modal-box">
   <h3>Edit User</h3>
@@ -792,6 +1014,7 @@ function imgSrc(string $url): string {
 </div>
 </div>
 
+<!-- Force Logout All — confirmation modal -->
 <div class="modal" id="logoutAllModal">
 <div class="modal-box" style="width:400px">
   <h3 id="logoutAllTitle">Logout All Users</h3>
@@ -812,6 +1035,139 @@ function imgSrc(string $url): string {
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       Confirm Logout
     </button>
+  </div>
+</div>
+</div>
+
+<!-- Add Group Modal -->
+<div class="modal" id="addGroupModal">
+<div class="modal-box">
+  <h3>Add Item Group</h3>
+  <form method="post" action="save_item_group.php" enctype="multipart/form-data" onsubmit="injectGroupImage(this)">
+    <input type="hidden" name="id" value="0">
+    <input type="hidden" name="image_url" id="addGroupImageData">
+    <label>Title</label>
+    <input type="text" name="title" placeholder="e.g. Electronics" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>PNG Image</label>
+    <div class="img-upload-area" onclick="document.getElementById('addGroupFile').click()">
+      <img id="addGroupPreview" src="" style="display:none;max-height:80px;max-width:120px;object-fit:contain;border-radius:6px">
+      <span id="addGroupPlaceholder">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Click to upload PNG
+      </span>
+    </div>
+    <input type="file" id="addGroupFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="previewImage(this,'addGroupPreview','addGroupPlaceholder','addGroupImageData')">
+    <div class="modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('addGroupModal')">Cancel</button>
+      <button type="submit" class="btn btn-dark">Save Group</button>
+    </div>
+  </form>
+</div>
+</div>
+
+<!-- Edit Group Modal -->
+<div class="modal" id="editGroupModal">
+<div class="modal-box">
+  <h3>Edit Item Group</h3>
+  <form method="post" action="save_item_group.php" onsubmit="injectGroupImageEdit(this)">
+    <input type="hidden" name="id" id="editGroupId">
+    <input type="hidden" name="image_url" id="editGroupImageData">
+    <label>Title</label>
+    <input type="text" name="title" id="editGroupTitle" placeholder="Group title" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>PNG Image <span style="font-size:11px;color:var(--muted)">(leave blank to keep existing)</span></label>
+    <div class="img-upload-area" onclick="document.getElementById('editGroupFile').click()">
+      <img id="editGroupPreview" src="" style="display:none;max-height:80px;max-width:120px;object-fit:contain;border-radius:6px">
+      <span id="editGroupPlaceholder">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Click to replace image
+      </span>
+    </div>
+    <input type="file" id="editGroupFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="previewImage(this,'editGroupPreview','editGroupPlaceholder','editGroupImageData')">
+    <div class="modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('editGroupModal')">Cancel</button>
+      <button type="submit" class="btn btn-dark">Update Group</button>
+    </div>
+  </form>
+</div>
+</div>
+
+<!-- Delete Group Modal -->
+<div class="modal" id="deleteGroupModal">
+<div class="modal-box" style="width:340px">
+  <h3>Delete Group</h3>
+  <p style="color:var(--muted);font-size:13.5px;margin-bottom:20px">Delete group <strong id="deleteGroupName"></strong>? All items in this group will also be deleted.</p>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-ghost" onclick="closeModal('deleteGroupModal')">Cancel</button>
+    <a id="deleteGroupLink" href="#" class="btn btn-danger">Delete</a>
+  </div>
+</div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal" id="addItemModal">
+<div class="modal-box">
+  <h3>Add Inventory Item</h3>
+  <form method="post" action="save_inventory_item.php">
+    <input type="hidden" name="id" value="0">
+    <label>Group</label>
+    <select name="group_id" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+      <option value="">— Select group —</option>
+      <?php foreach($itemGroups as $g): ?>
+      <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <label>Title</label>
+    <input type="text" name="title" placeholder="Item title" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Description 1</label>
+    <input type="text" name="description1" placeholder="e.g. Brand, model" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Description 2</label>
+    <input type="text" name="description2" placeholder="e.g. Colour, size" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Initial Stock</label>
+    <input type="number" name="stock" value="0" min="0" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:2px">
+    <div class="modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
+      <button type="submit" class="btn btn-dark">Save Item</button>
+    </div>
+  </form>
+</div>
+</div>
+
+<!-- Edit Item Modal -->
+<div class="modal" id="editItemModal">
+<div class="modal-box">
+  <h3>Edit Inventory Item</h3>
+  <form method="post" action="save_inventory_item.php">
+    <input type="hidden" name="id" id="editItemId">
+    <label>Group</label>
+    <select name="group_id" id="editItemGroup" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+      <?php foreach($itemGroups as $g): ?>
+      <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <label>Title</label>
+    <input type="text" name="title" id="editItemTitle" required style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Description 1</label>
+    <input type="text" name="description1" id="editItemDesc1" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Description 2</label>
+    <input type="text" name="description2" id="editItemDesc2" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:14px">
+    <label>Stock</label>
+    <input type="number" name="stock" id="editItemStock" min="0" style="width:100%;padding:10px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;margin-bottom:2px">
+    <div class="modal-footer" style="margin-top:14px">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('editItemModal')">Cancel</button>
+      <button type="submit" class="btn btn-dark">Update Item</button>
+    </div>
+  </form>
+</div>
+</div>
+
+<!-- Delete Item Modal -->
+<div class="modal" id="deleteItemModal">
+<div class="modal-box" style="width:340px">
+  <h3>Delete Item</h3>
+  <p style="color:var(--muted);font-size:13.5px;margin-bottom:20px">Delete <strong id="deleteItemName"></strong>? This cannot be undone.</p>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-ghost" onclick="closeModal('deleteItemModal')">Cancel</button>
+    <a id="deleteItemLink" href="#" class="btn btn-danger">Delete</a>
   </div>
 </div>
 </div>
@@ -926,17 +1282,24 @@ ws.onmessage=function(e){
   });
 };
 
+// ══════════════════════════════════════════
+// FORCE LOGOUT — single user
+// ══════════════════════════════════════════
 async function forceLogoutUser(userId, username) {
   if (!confirm(`Force logout "${username}"?\n\nThis will immediately disconnect them from the game.`)) return;
+
   const btn = event.currentTarget;
   const origColor = btn.style.color;
   btn.disabled = true;
   btn.style.opacity = '0.4';
+
   try {
     const r = await post('force_logout.php', { mode: 'single', user_id: userId });
     if (r.status === 'success') {
+      // Flash the status dot offline
       const dot = document.querySelector(`.user-status[data-user="${esc(username)}"]`);
       if (dot) { dot.classList.remove('online'); dot.classList.add('offline'); }
+      // Brief visual feedback on button
       btn.style.color = '#22c55e';
       btn.style.opacity = '1';
       setTimeout(() => { btn.style.color = origColor; btn.disabled = false; }, 2000);
@@ -953,6 +1316,9 @@ async function forceLogoutUser(userId, username) {
   }
 }
 
+// ══════════════════════════════════════════
+// FORCE LOGOUT — all users / all admins
+// ══════════════════════════════════════════
 let _logoutAllMode = '';
 const LOGOUT_PHRASES = {
   users:  'Confirm Logout All Users',
@@ -1000,6 +1366,7 @@ async function executeLogoutAll() {
   const btn  = document.getElementById('logoutAllConfirmBtn');
   btn.disabled = true;
   btn.textContent = 'Working…';
+
   try {
     const r = await post('force_logout.php', {
       mode: mode === 'users' ? 'all_users' : 'all_admins'
@@ -1016,6 +1383,66 @@ async function executeLogoutAll() {
     btn.disabled = false;
     btn.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Confirm Logout';
   }
+}
+
+// ── Toast notification (lightweight, no dependency) ──
+// ── Inventory: image preview ──
+function previewImage(input, previewId, placeholderId, dataId) {
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById(previewId);
+    const ph   = document.getElementById(placeholderId);
+    const data = document.getElementById(dataId);
+    prev.src = e.target.result;
+    prev.style.display = 'block';
+    ph.style.display   = 'none';
+    data.value         = e.target.result;
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+function injectGroupImage(form) {
+  // image_url hidden field is already set by previewImage
+  return true;
+}
+function injectGroupImageEdit(form) {
+  return true;
+}
+
+// ── Inventory: Group modals ──
+function openEditGroupModal(id, title, imageUrl) {
+  document.getElementById('editGroupId').value = id;
+  document.getElementById('editGroupTitle').value = title;
+  document.getElementById('editGroupImageData').value = '';
+  const prev = document.getElementById('editGroupPreview');
+  const ph   = document.getElementById('editGroupPlaceholder');
+  if (imageUrl) {
+    prev.src = imageUrl; prev.style.display = 'block'; ph.style.display = 'none';
+  } else {
+    prev.style.display = 'none'; ph.style.display = '';
+  }
+  openModal('editGroupModal');
+}
+function confirmDeleteGroup(id, title) {
+  document.getElementById('deleteGroupName').textContent = title;
+  document.getElementById('deleteGroupLink').href = `delete_item_group.php?id=${id}`;
+  openModal('deleteGroupModal');
+}
+
+// ── Inventory: Item modals ──
+function openEditItemModal(id, groupId, title, desc1, desc2, stock) {
+  document.getElementById('editItemId').value    = id;
+  document.getElementById('editItemGroup').value = groupId;
+  document.getElementById('editItemTitle').value = title;
+  document.getElementById('editItemDesc1').value = desc1;
+  document.getElementById('editItemDesc2').value = desc2;
+  document.getElementById('editItemStock').value = stock;
+  openModal('editItemModal');
+}
+function confirmDeleteItem(id, title) {
+  document.getElementById('deleteItemName').textContent = title;
+  document.getElementById('deleteItemLink').href = `delete_inventory_item.php?id=${id}`;
+  openModal('deleteItemModal');
 }
 
 function showToast(msg) {
