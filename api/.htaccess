@@ -1,2 +1,22 @@
-# Block all direct HTTP access to config files
-Require all denied
+# ── AdminShop API ──
+# Apache-level security — no header checks here since Render's
+# proxy strips custom headers before they reach Apache.
+# All key validation is handled by config/gateway_guard.php in PHP.
+
+Options -Indexes
+ServerSignature Off
+
+# Block traversal attacks in query strings
+RewriteEngine On
+RewriteCond %{QUERY_STRING} (\.\./|\.\.\\) [NC]
+RewriteRule ^ - [F,L]
+
+# Block access to sensitive file types
+<FilesMatch "\.(env|log|bak|sql|sqlite|db)$">
+    Require all denied
+</FilesMatch>
+
+# Clean JSON error pages (no HTML leaking server info)
+ErrorDocument 403 '{"status":"error","message":"Forbidden"}'
+ErrorDocument 404 '{"status":"error","message":"Not found"}'
+ErrorDocument 500 '{"status":"error","message":"Server error"}'
