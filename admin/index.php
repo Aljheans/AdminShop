@@ -45,7 +45,15 @@ $totalUsers  = (int)$conn->query("SELECT COUNT(*) FROM users WHERE role='user'")
 $totalAdmins = (int)$conn->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn();
 
 /* ── ACTIVE SECTION ── */
-$section = $_GET['section'] ?? 'user-management';
+// If ?section= is in the URL, use it and save it to the session.
+// If not (e.g. page refresh or direct visit), restore from session so the
+// user stays on the same section they were on.
+if (isset($_GET['section'])) {
+    $section = $_GET['section'];
+    $_SESSION['admin_last_section'] = $section;
+} else {
+    $section = $_SESSION['admin_last_section'] ?? 'user-management';
+}
 
 // Permission gate for non-superadmins
 if (!$isSuperadmin) {
