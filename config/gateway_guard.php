@@ -33,18 +33,6 @@ if (!hash_equals($_expectedKey, $_providedKey)) {
     exit;
 }
 
-// Also reject if not coming over HTTPS in production
-$_isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-          || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'
-          || ($_SERVER['SERVER_PORT'] ?? '') === '443';
-
-if (!$_isHttps && (getenv('APP_ENV') ?: 'production') === 'production') {
-    http_response_code(403);
-    header('Content-Type: application/json');
-    echo json_encode(['status' => 'error', 'message' => 'HTTPS required.']);
-    exit;
-}
-
 // All good — clean up temp vars to avoid polluting global scope
-unset($_expectedKey, $_providedKey, $_isHttps);
+unset($_expectedKey, $_providedKey);
 ?>
