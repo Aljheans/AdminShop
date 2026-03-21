@@ -757,6 +757,111 @@ function imgSrc(string $url): string {
   </div>
 
   <!-- ══════════ SALES MANAGEMENT ══════════ -->
+  <?php elseif($section === 'sales-orders'): ?>
+
+  <?php
+  // Fetch orders for this admin (or all for superadmin)
+  $myId = $_SESSION['user_id'] ?? 0;
+  $ordersData = [];
+  try {
+      if ($isSuperadmin) {
+          $ordersData = $conn->query("
+              SELECT o.*, u.username AS buyer_username, u.uid AS buyer_uid, a.username AS admin_username
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              ORDER BY o.created_at DESC
+          ")->fetchAll(PDO::FETCH_ASSOC);
+      } else {
+          $oStmt = $conn->prepare("
+              SELECT o.*, u.username AS buyer_username, u.uid AS buyer_uid, a.username AS admin_username
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              WHERE o.admin_id = :aid
+              ORDER BY o.created_at DESC
+          ");
+          $oStmt->execute([':aid' => $myId]);
+          $ordersData = $oStmt->fetchAll(PDO::FETCH_ASSOC);
+      }
+  } catch (Exception $e) {}
+  ?>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Orders</span>
+      <span style="font-size:12px;color:var(--muted)"><?= count($ordersData) ?> total</span>
+    </div>
+    <?php if(empty($ordersData)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No orders yet.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:900px">
+      <thead>
+        <tr>
+          <th>Receipt ID</th>
+          <th>Admin</th>
+          <th>Date</th>
+          <th>Receipt</th>
+          <th>Item Purchased</th>
+          <th>Username</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach($ordersData as $o): ?>
+      <tr>
+        <td><span class="code-badge" style="font-size:12px"><?= htmlspecialchars($o['receipt_id']) ?></span></td>
+        <td style="font-size:13px;font-weight:500"><?= htmlspecialchars($o['admin_username']) ?></td>
+        <td style="font-size:12px;color:var(--muted);white-space:nowrap"><?= htmlspecialchars(substr($o['created_at'],0,16)) ?></td>
+        <td>
+          <?php if($o['screenshot']): ?>
+          <img src="<?= htmlspecialchars($o['screenshot']) ?>"
+               style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer"
+               onclick="viewScreenshot('<?= htmlspecialchars($o['screenshot']) ?>','<?= htmlspecialchars($o['receipt_id']) ?>')"
+               title="Click to enlarge">
+          <?php else: ?>
+          <span style="font-size:11px;color:var(--muted)">—</span>
+          <?php endif; ?>
+        </td>
+        <td style="font-weight:500;font-size:13px">
+          <?= htmlspecialchars($o['item_title']) ?>
+          <?php if($o['variant_label']): ?><span style="color:var(--muted);font-weight:400"> — <?= htmlspecialchars($o['variant_label']) ?></span><?php endif; ?>
+          <?php if($o['suboption']): ?><span style="color:var(--muted);font-size:11px"> (<?= htmlspecialchars($o['suboption']) ?>)</span><?php endif; ?>
+          <div style="font-size:12px;font-weight:700;color:var(--purple);margin-top:2px">₱<?= number_format((float)$o['price'],2) ?></div>
+        </td>
+        <td>
+          <div style="font-weight:500;font-size:13px"><?= htmlspecialchars($o['buyer_username']) ?></div>
+          <div style="font-size:11px;color:var(--muted)"><?= htmlspecialchars($o['buyer_uid'] ?? '') ?></div>
+        </td>
+        <td>
+          <select class="order-status-select status-<?= $o['status'] ?>"
+                  onchange="updateOrderStatus(<?= $o['id'] ?>, this)"
+                  data-order-id="<?= $o['id'] ?>">
+            <option value="reviewing" <?= $o['status']==='reviewing'?'selected':'' ?>>Reviewing</option>
+            <option value="approved"  <?= $o['status']==='approved' ?'selected':'' ?>>Approved</option>
+            <option value="cancelled" <?= $o['status']==='cancelled'?'selected':'' ?>>Cancelled</option>
+          </select>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+  </div>
+
+  <!-- Screenshot viewer modal -->
+  <div class="modal" id="screenshotModal">
+    <div class="modal-box" style="max-width:600px;padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span class="card-title" id="ssReceiptLabel"></span>
+        <button onclick="closeModal('screenshotModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px">×</button>
+      </div>
+      <img id="ssImg" src="" style="width:100%;border-radius:10px;border:1px solid var(--border)">
+    </div>
+  </div>
+
   <?php elseif(isset($salesLabels[$section])): ?>
   <div class="card">
     <div class="card-header">
@@ -1721,6 +1826,37 @@ function confirmDeleteItem(id, title) {
   document.getElementById('deleteItemName').textContent = title;
   document.getElementById('deleteItemLink').href = `delete_inventory_item.php?id=${id}`;
   openModal('deleteItemModal');
+}
+
+// ── Orders: status update ──
+async function updateOrderStatus(orderId, sel) {
+  const newStatus = sel.value;
+  sel.disabled = true;
+  try {
+    const res = await post('../api/manage_order.php', {
+      order_id: orderId,
+      status:   newStatus,
+      admin_id: <?= $_SESSION['user_id'] ?? 0 ?>,
+    });
+    if (res.status === 'success') {
+      sel.className = 'order-status-select status-' + newStatus;
+      showToast('Status updated to ' + newStatus);
+    } else {
+      alert('Error: ' + res.message);
+      location.reload();
+    }
+  } catch(e) {
+    alert('Network error.');
+    location.reload();
+  } finally {
+    sel.disabled = false;
+  }
+}
+
+function viewScreenshot(src, receiptId) {
+  document.getElementById('ssImg').src = src;
+  document.getElementById('ssReceiptLabel').textContent = 'Receipt ' + receiptId;
+  openModal('screenshotModal');
 }
 
 function showToast(msg) {

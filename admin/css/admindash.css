@@ -1390,3 +1390,19 @@ body {
   border: 1px solid rgba(124,107,255,.2);
   margin-left: auto;
 }
+
+/* ── Order Status Select ── */
+.order-status-select {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+.status-reviewing { color: #f59e0b; border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); }
+.status-approved  { color: var(--green); border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.08); }
+.status-cancelled { color: var(--red); border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.08); }

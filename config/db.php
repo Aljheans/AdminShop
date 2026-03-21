@@ -123,6 +123,29 @@ CREATE TABLE IF NOT EXISTS variant_suboptions (
 )
 ");
 
+// ── Orders (full purchase workflow with receipt, admin, screenshot) ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS orders (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id   TEXT UNIQUE NOT NULL,
+    user_id      INTEGER NOT NULL,
+    admin_id     INTEGER NOT NULL,
+    item_id      INTEGER NOT NULL,
+    variant_id   INTEGER NOT NULL,
+    suboption    TEXT NOT NULL DEFAULT '',
+    item_title   TEXT NOT NULL DEFAULT '',
+    variant_label TEXT NOT NULL DEFAULT '',
+    price        DECIMAL(10,2) NOT NULL DEFAULT 0,
+    screenshot   TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'reviewing',
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id)    REFERENCES users(id),
+    FOREIGN KEY (admin_id)   REFERENCES users(id),
+    FOREIGN KEY (item_id)    REFERENCES inventory_items(id),
+    FOREIGN KEY (variant_id) REFERENCES inventory_item_variants(id)
+)
+");
+
 // ── Migration: add max_slots + price + slots_used to existing variant rows ──
 try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN max_slots INTEGER NOT NULL DEFAULT 1"); } catch(Exception $e) {}
 try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0"); } catch(Exception $e) {}
@@ -175,7 +198,6 @@ $migrations = [
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN uid TEXT",
-    // Admin permissions: navigation-level access controls
     "ALTER TABLE admin_permissions ADD COLUMN can_settings INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE admin_permissions ADD COLUMN can_sales INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE admin_permissions ADD COLUMN can_sales_catered INTEGER NOT NULL DEFAULT 0",
