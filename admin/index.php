@@ -867,6 +867,145 @@ function imgSrc(string $url): string {
     </div>
   </div>
 
+  <!-- ══════════ ADMIN SALARY ══════════ -->
+  <?php elseif($section === 'sales-admin-salary'): ?>
+
+  <?php
+  // Salary tiers: based on total approved sales amount
+  function calcSalary(float $total): array {
+      if ($total >= 1500)     { $pct = 40; }
+      elseif ($total >= 1000) { $pct = 35; }
+      elseif ($total >= 500)  { $pct = 30; }
+      elseif ($total > 0)     { $pct = 20; }
+      else                    { $pct = 0;  }
+      return ['pct' => $pct, 'salary' => round($total * $pct / 100, 2)];
+  }
+
+  // Fetch all admins (not superadmin) with their order stats
+  $salaryRows = [];
+  try {
+      $adminsForSalary = $conn->query("SELECT id, username, uid FROM users WHERE role='admin' ORDER BY uid ASC")->fetchAll(PDO::FETCH_ASSOC);
+      foreach ($adminsForSalary as $sa) {
+          $aid = $sa['id'];
+          // Total approved sales (sum of price)
+          $sSt = $conn->prepare("SELECT COALESCE(SUM(price),0) AS total, COUNT(*) AS cnt FROM orders WHERE admin_id=:aid AND status='approved'");
+          $sSt->execute([':aid'=>$aid]);
+          $sr = $sSt->fetch(PDO::FETCH_ASSOC);
+          $totalSales   = (float)$sr['total'];
+          $catered      = (int)$sr['cnt'];
+
+          // Cancelled count
+          $cSt = $conn->prepare("SELECT COUNT(*) FROM orders WHERE admin_id=:aid AND status='cancelled'");
+          $cSt->execute([':aid'=>$aid]);
+          $cancelled = (int)$cSt->fetchColumn();
+
+          $sal = calcSalary($totalSales);
+          $salaryRows[] = [
+              'username'    => $sa['username'],
+              'uid'         => $sa['uid'],
+              'total_sales' => $totalSales,
+              'catered'     => $catered,
+              'cancelled'   => $cancelled,
+              'pct'         => $sal['pct'],
+              'salary'      => $sal['salary'],
+          ];
+      }
+  } catch (Exception $e) {}
+
+  // Overall totals
+  $grandTotal   = array_sum(array_column($salaryRows, 'total_sales'));
+  $grandCatered = array_sum(array_column($salaryRows, 'catered'));
+  $grandDenied  = array_sum(array_column($salaryRows, 'cancelled'));
+  $grandSalary  = array_sum(array_column($salaryRows, 'salary'));
+  ?>
+
+  <!-- Summary cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px">
+    <div class="stat-card">
+      <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="#22c55e" stroke-width="1.8" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="stat-label">Total Sales</div><div class="stat-value" style="font-size:20px">₱<?= number_format($grandTotal,2) ?></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="#8b5cf6" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div><div class="stat-label">Catered Orders</div><div class="stat-value" style="font-size:20px"><?= $grandCatered ?></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon amber"><svg width="22" height="22" fill="none" stroke="#f59e0b" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+      <div><div class="stat-label">Denied Orders</div><div class="stat-value" style="font-size:20px"><?= $grandDenied ?></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="#22c55e" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>
+      <div><div class="stat-label">Total Salary</div><div class="stat-value" style="font-size:20px">₱<?= number_format($grandSalary,2) ?></div></div>
+    </div>
+  </div>
+
+  <!-- Salary rate legend -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><span class="card-title">Salary Rate Tiers</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 20px">
+      <span class="salary-tier-badge">₱1 – ₱499 <strong>→ 20%</strong></span>
+      <span class="salary-tier-badge">₱500 – ₱999 <strong>→ 30%</strong></span>
+      <span class="salary-tier-badge">₱1,000 – ₱1,499 <strong>→ 35%</strong></span>
+      <span class="salary-tier-badge">₱1,500+ <strong>→ 40%</strong></span>
+    </div>
+  </div>
+
+  <!-- Admin salary table -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Admin Salary Breakdown</span>
+      <span style="font-size:12px;color:var(--muted)"><?= count($salaryRows) ?> admin<?= count($salaryRows)!=1?'s':'' ?></span>
+    </div>
+    <?php if(empty($salaryRows)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No admins found.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>UID</th>
+          <th>Admin</th>
+          <th>Total Sales</th>
+          <th>Catered</th>
+          <th>Cancelled</th>
+          <th>Rate</th>
+          <th>Salary</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach($salaryRows as $sr): ?>
+      <tr>
+        <td><span class="uid-badge"><?= htmlspecialchars($sr['uid'] ?? '—') ?></span></td>
+        <td style="font-weight:600;font-size:13px"><?= htmlspecialchars($sr['username']) ?></td>
+        <td style="font-weight:600;color:var(--green)">₱<?= number_format($sr['total_sales'],2) ?></td>
+        <td><span class="perm-on" style="font-size:12px">✓ <?= $sr['catered'] ?></span></td>
+        <td><span class="perm-off" style="font-size:12px">✗ <?= $sr['cancelled'] ?></span></td>
+        <td>
+          <?php if($sr['pct'] > 0): ?>
+          <span class="salary-pct-badge salary-pct-<?= $sr['pct'] ?>"><?= $sr['pct'] ?>%</span>
+          <?php else: ?>
+          <span style="font-size:12px;color:var(--muted)">—</span>
+          <?php endif; ?>
+        </td>
+        <td style="font-weight:700;font-size:14px;color:var(--purple)">₱<?= number_format($sr['salary'],2) ?></td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border)">
+          <td colspan="2" style="font-weight:700;font-size:13px;padding:12px 16px">TOTAL</td>
+          <td style="font-weight:700;color:var(--green)">₱<?= number_format($grandTotal,2) ?></td>
+          <td><span class="perm-on" style="font-size:12px">✓ <?= $grandCatered ?></span></td>
+          <td><span class="perm-off" style="font-size:12px">✗ <?= $grandDenied ?></span></td>
+          <td></td>
+          <td style="font-weight:700;font-size:14px;color:var(--purple)">₱<?= number_format($grandSalary,2) ?></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+    <?php endif; ?>
+  </div>
+
   <!-- ══════════ TOTAL ORDERED CATERED ══════════ -->
   <?php elseif($section === 'sales-catered'): ?>
 
