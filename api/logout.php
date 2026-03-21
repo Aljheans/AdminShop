@@ -1,6 +1,4 @@
 <?php
-require_once __DIR__ . "/../config/gateway_guard.php";
-
 require_once __DIR__ . '/../config/rate_limit.php';
 rate_limit('logout', 30, 60);
 session_start();
