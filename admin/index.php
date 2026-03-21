@@ -187,11 +187,18 @@ if ($isSuperadmin) {
             JOIN item_groups g ON g.id = i.group_id
             ORDER BY g.title ASC, i.title ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
-        // Attach variants to each item
+        // Attach variants (with slots + suboptions) to each item
         foreach ($inventoryItems as &$invItem) {
-            $vStmt = $conn->prepare("SELECT label FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+            $vStmt = $conn->prepare("SELECT id, label, max_slots FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
             $vStmt->execute([':id' => $invItem['id']]);
-            $invItem['variants'] = $vStmt->fetchAll(PDO::FETCH_COLUMN);
+            $varRows = $vStmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($varRows as &$vr) {
+                $sStmt = $conn->prepare("SELECT label FROM variant_suboptions WHERE variant_id=:vid ORDER BY id ASC");
+                $sStmt->execute([':vid' => $vr['id']]);
+                $vr['suboptions'] = $sStmt->fetchAll(PDO::FETCH_COLUMN);
+            }
+            unset($vr);
+            $invItem['variants'] = $varRows;
         }
         unset($invItem);
     } catch (Exception $e) {}
@@ -819,9 +826,23 @@ function imgSrc(string $url): string {
       <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No groups yet. Click "Add Group" to create one.</div>
     <?php else: ?>
     <?php foreach($itemGroups as $g):
-      $grpItems = $conn->prepare("SELECT i.*, GROUP_CONCAT(v.label, '|||') AS variant_labels FROM inventory_items i LEFT JOIN inventory_item_variants v ON v.item_id = i.id WHERE i.group_id=:gid GROUP BY i.id ORDER BY i.title ASC");
-      $grpItems->execute([':gid'=>$g['id']]);
-      $grpItems = $grpItems->fetchAll(PDO::FETCH_ASSOC);
+      $grpItemsStmt = $conn->prepare("SELECT i.* FROM inventory_items i WHERE i.group_id=:gid ORDER BY i.title ASC");
+      $grpItemsStmt->execute([':gid'=>$g['id']]);
+      $grpItems = $grpItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+      // Attach variants+suboptions to each group item
+      foreach ($grpItems as &$gi) {
+          $gvStmt = $conn->prepare("SELECT id, label, max_slots FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+          $gvStmt->execute([':id'=>$gi['id']]);
+          $gvRows = $gvStmt->fetchAll(PDO::FETCH_ASSOC);
+          foreach ($gvRows as &$gvr) {
+              $gsStmt = $conn->prepare("SELECT label FROM variant_suboptions WHERE variant_id=:vid ORDER BY id ASC");
+              $gsStmt->execute([':vid'=>$gvr['id']]);
+              $gvr['suboptions'] = $gsStmt->fetchAll(PDO::FETCH_COLUMN);
+          }
+          unset($gvr);
+          $gi['variants'] = $gvRows;
+      }
+      unset($gi);
     ?>
     <div class="inv-group-block">
       <!-- Group header row -->
@@ -854,27 +875,33 @@ function imgSrc(string $url): string {
       <?php if(!empty($grpItems)): ?>
       <div class="inv-items-list">
         <?php foreach($grpItems as $gi):
-          $gVariants = $gi['variant_labels'] ? explode('|||', $gi['variant_labels']) : [];
         ?>
         <div class="inv-item-row">
-          <div>
+          <div style="flex:1">
             <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($gi['title']) ?></div>
-            <?php if($gi['description1'] || $gi['description2']): ?>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">
-              <?= htmlspecialchars($gi['description1']) ?><?= $gi['description1']&&$gi['description2'] ? ' · ' : '' ?><?= htmlspecialchars($gi['description2']) ?>
-            </div>
-            <?php endif; ?>
-            <?php if(!empty($gVariants)): ?>
-            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-              <?php foreach($gVariants as $vl): ?>
-              <span class="inv-variant-tag"><?= htmlspecialchars($vl) ?></span>
+            <?php if(!empty($gi['variants'])): ?>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+              <?php foreach($gi['variants'] as $gv): ?>
+              <div class="inv-variant-block">
+                <div class="inv-variant-block-header">
+                  <span class="inv-variant-tag"><?= htmlspecialchars($gv['label']) ?></span>
+                  <span class="inv-slots-badge"><?= $gv['max_slots'] ?> slot<?= $gv['max_slots']!=1?'s':'' ?></span>
+                </div>
+                <?php if(!empty($gv['suboptions'])): ?>
+                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;padding-left:8px">
+                  <?php foreach($gv['suboptions'] as $so): ?>
+                  <span class="inv-subopt-tag">↳ <?= htmlspecialchars($so) ?></span>
+                  <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+              </div>
               <?php endforeach; ?>
             </div>
             <?php endif; ?>
           </div>
-          <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+          <div style="display:flex;gap:4px;align-items:flex-start;flex-shrink:0;margin-top:2px">
             <button class="btn-icon" title="Edit"
-              onclick="openEditItemModalFull(<?= $gi['id'] ?>,<?= $gi['group_id'] ?>,'<?= addslashes(htmlspecialchars($gi['title'])) ?>','<?= addslashes(htmlspecialchars($gi['description1'])) ?>','<?= addslashes(htmlspecialchars($gi['description2'])) ?>',<?= (int)$gi['stock'] ?>,<?= htmlspecialchars(json_encode($gVariants)) ?>)">
+              onclick="openEditItemModalFull(<?= $gi['id'] ?>,<?= $gi['group_id'] ?>,'<?= addslashes(htmlspecialchars($gi['title'])) ?>','<?= addslashes(htmlspecialchars($gi['description1'])) ?>','<?= addslashes(htmlspecialchars($gi['description2'])) ?>',<?= (int)$gi['stock'] ?>,<?= htmlspecialchars(json_encode($gi['variants'] ?? [])) ?>)">
               <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
             <button class="btn-icon red" title="Delete"
@@ -925,14 +952,26 @@ function imgSrc(string $url): string {
           </div>
           <?php endif; ?>
           <?php if(!empty($item['variants'])): ?>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-            <?php foreach($item['variants'] as $vl): ?>
-            <span class="inv-variant-tag"><?= htmlspecialchars($vl) ?></span>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+            <?php foreach($item['variants'] as $iv): ?>
+            <div class="inv-variant-block">
+              <div class="inv-variant-block-header">
+                <span class="inv-variant-tag"><?= htmlspecialchars($iv['label']) ?></span>
+                <span class="inv-slots-badge"><?= $iv['max_slots'] ?> slot<?= $iv['max_slots']!=1?'s':'' ?></span>
+              </div>
+              <?php if(!empty($iv['suboptions'])): ?>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;padding-left:8px">
+                <?php foreach($iv['suboptions'] as $so): ?>
+                <span class="inv-subopt-tag">↳ <?= htmlspecialchars($so) ?></span>
+                <?php endforeach; ?>
+              </div>
+              <?php endif; ?>
+            </div>
             <?php endforeach; ?>
           </div>
           <?php endif; ?>
         </div>
-        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+        <div style="display:flex;gap:4px;align-items:flex-start;flex-shrink:0;margin-top:2px">
           <span class="uid-badge" style="margin-right:4px"><?= number_format($item['stock']) ?></span>
           <button class="btn-icon" title="Edit"
             onclick="openEditItemModalFull(<?= $item['id'] ?>,<?= $item['group_id'] ?>,'<?= addslashes(htmlspecialchars($item['title'])) ?>','<?= addslashes(htmlspecialchars($item['description1'])) ?>','<?= addslashes(htmlspecialchars($item['description2'])) ?>',<?= (int)$item['stock'] ?>,<?= htmlspecialchars(json_encode($item['variants'] ?? [])) ?>)">
@@ -1185,18 +1224,19 @@ function imgSrc(string $url): string {
     <input type="text" name="description2" placeholder="e.g. Monthly plan" class="field-input" style="margin-bottom:14px">
     <label class="field-label">Initial Stock</label>
     <input type="number" name="stock" value="0" min="0" class="field-input" style="margin-bottom:16px">
+    <input type="hidden" name="variants_json" id="addVariantsJson">
     <label class="field-label">
-      Options / Variants
-      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. "2 devices", "5 profiles", "1 account for all"</span>
+      Variants / Plans
+      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. Shared Profile (2 slots), Solo Profile (1 slot)</span>
     </label>
-    <div id="addVariantList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="addVariantRow('addVariantList')">
+    <div id="addVariantList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px"></div>
+    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="addVariantBlock('addVariantList')">
       <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Add option
+      Add Variant
     </button>
     <div class="modal-footer" style="margin-top:16px">
       <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
-      <button type="submit" class="btn btn-dark">Save Item</button>
+      <button type="submit" class="btn btn-dark" onclick="serializeVariants('addVariantList','addVariantsJson')">Save Item</button>
     </div>
   </form>
 </div>
@@ -1222,18 +1262,19 @@ function imgSrc(string $url): string {
     <input type="text" name="description2" id="editItemDesc2" class="field-input" style="margin-bottom:14px">
     <label class="field-label">Stock</label>
     <input type="number" name="stock" id="editItemStock" min="0" class="field-input" style="margin-bottom:16px">
+    <input type="hidden" name="variants_json" id="editVariantsJson">
     <label class="field-label">
-      Options / Variants
-      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. "2 devices", "5 profiles"</span>
+      Variants / Plans
+      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. Shared Profile (2 slots), Solo Profile (1 slot)</span>
     </label>
-    <div id="editVariantList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="addVariantRow('editVariantList')">
+    <div id="editVariantList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px"></div>
+    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="addVariantBlock('editVariantList')">
       <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Add option
+      Add Variant
     </button>
     <div class="modal-footer" style="margin-top:16px">
       <button type="button" class="btn btn-ghost" onclick="closeModal('editItemModal')">Cancel</button>
-      <button type="submit" class="btn btn-dark">Update Item</button>
+      <button type="submit" class="btn btn-dark" onclick="serializeVariants('editVariantList','editVariantsJson')">Update Item</button>
     </div>
   </form>
 </div>
@@ -1267,6 +1308,7 @@ function openModal(id) {
   document.getElementById(id).classList.add('open');
   if (id === 'addItemModal') {
     document.getElementById('addVariantList').innerHTML = '';
+    document.getElementById('addVariantsJson').value = '';
   }
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -1513,19 +1555,79 @@ function confirmDeleteGroup(id, title) {
   openModal('deleteGroupModal');
 }
 
-// ── Inventory: variant rows ──
-function addVariantRow(listId, value = '') {
+// ── Inventory: variant blocks (label + slots + sub-options) ──
+function addVariantBlock(listId, variant = null) {
   const list = document.getElementById(listId);
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;align-items:center;gap:6px';
-  row.innerHTML = `
-    <input type="text" name="variants[]" value="${esc(value)}" placeholder="e.g. 2 devices"
-      style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px">
-    <button type="button" onclick="this.parentElement.remove()"
-      style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--red);cursor:pointer;font-size:15px;line-height:1">×</button>
+  const block = document.createElement('div');
+  block.className = 'variant-builder-block';
+
+  const label    = variant?.label      || '';
+  const slots    = variant?.slots      || 1;
+  const subopts  = variant?.suboptions || [];
+
+  block.innerHTML = `
+    <div class="variant-builder-header">
+      <div style="display:flex;gap:8px;flex:1;align-items:center">
+        <input type="text" class="vb-label field-input" value="${esc(label)}"
+          placeholder="Variant name (e.g. Shared Profile)"
+          style="flex:1;padding:8px 12px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <label style="font-size:11px;color:var(--muted);white-space:nowrap">Max slots</label>
+          <input type="number" class="vb-slots field-input" value="${slots}" min="1"
+            style="width:64px;padding:8px 10px;font-size:13px;text-align:center">
+        </div>
+      </div>
+      <button type="button" onclick="this.closest('.variant-builder-block').remove()"
+        style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--red);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0">×</button>
+    </div>
+    <div class="vb-subopts">
+      <div class="vb-subopts-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+        ${subopts.map(s => suboptPill(s)).join('')}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" class="vb-subopt-input field-input" placeholder="Add sub-option (e.g. 2 devices)"
+          style="flex:1;padding:7px 10px;font-size:12px"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addSubopt(this);}">
+        <button type="button" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;flex-shrink:0"
+          onclick="addSubopt(this.previousElementSibling)">+ Add</button>
+      </div>
+    </div>
   `;
-  list.appendChild(row);
-  row.querySelector('input').focus();
+  list.appendChild(block);
+  block.querySelector('.vb-label').focus();
+}
+
+function suboptPill(label) {
+  return `<span class="vb-subopt-pill">
+    ${esc(label)}
+    <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;line-height:1;padding:0 0 0 4px">×</button>
+  </span>`;
+}
+
+function addSubopt(input) {
+  const val = input.value.trim();
+  if (!val) return;
+  const listEl = input.closest('.vb-subopts').querySelector('.vb-subopts-list');
+  const pill = document.createElement('span');
+  pill.className = 'vb-subopt-pill';
+  pill.innerHTML = `${esc(val)}<button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;line-height:1;padding:0 0 0 4px">×</button>`;
+  listEl.appendChild(pill);
+  input.value = '';
+  input.focus();
+}
+
+function serializeVariants(listId, targetId) {
+  const list = document.getElementById(listId);
+  const blocks = list.querySelectorAll('.variant-builder-block');
+  const result = [];
+  blocks.forEach(block => {
+    const label = block.querySelector('.vb-label').value.trim();
+    if (!label) return;
+    const slots = parseInt(block.querySelector('.vb-slots').value) || 1;
+    const suboptions = [...block.querySelectorAll('.vb-subopt-pill')].map(p => p.textContent.trim().replace('×','').trim()).filter(Boolean);
+    result.push({ label, slots, suboptions });
+  });
+  document.getElementById(targetId).value = JSON.stringify(result);
 }
 
 // ── Inventory: Item modals ──
@@ -1536,13 +1638,12 @@ function openEditItemModalFull(id, groupId, title, desc1, desc2, stock, variants
   document.getElementById('editItemDesc1').value = desc1;
   document.getElementById('editItemDesc2').value = desc2;
   document.getElementById('editItemStock').value = stock;
-  // Rebuild variant rows
   const list = document.getElementById('editVariantList');
   list.innerHTML = '';
-  (variants || []).forEach(v => addVariantRow('editVariantList', v));
+  document.getElementById('editVariantsJson').value = '';
+  (variants || []).forEach(v => addVariantBlock('editVariantList', v));
   openModal('editItemModal');
 }
-// Keep old name as alias for backwards compat
 function openEditItemModal(id, groupId, title, desc1, desc2, stock) {
   openEditItemModalFull(id, groupId, title, desc1, desc2, stock, []);
 }

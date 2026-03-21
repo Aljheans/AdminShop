@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
 )
 ");
 
-// ── Resources ──
+// ── Resources (dirt, water, fire, etc.) ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS resources (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS factories (
 )
 ");
 
-// ── Factory upgrade costs ──
+// ── Factory upgrade costs (resources + coins + time per level) ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS factory_upgrade_costs (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS factory_upgrade_costs (
 )
 ");
 
-// ── Resource costs per upgrade level ──
+// ── Resource costs per upgrade level (multiple resources possible) ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS factory_upgrade_resource_costs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +172,8 @@ CREATE TABLE IF NOT EXISTS user_factories (
     FOREIGN KEY (factory_id) REFERENCES factories(id) ON DELETE CASCADE
 )
 ");
+
+// ── Migrations: safely add new columns to existing DB ──
 // ── Item Groups ──
 $conn->exec("
 CREATE TABLE IF NOT EXISTS item_groups (
@@ -179,6 +181,43 @@ CREATE TABLE IF NOT EXISTS item_groups (
     title      TEXT NOT NULL,
     image_url  TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+");
+
+// ── Item Variants ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS inventory_item_variants (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id    INTEGER NOT NULL,
+    label      TEXT NOT NULL,
+    max_slots  INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+)
+");
+
+// ── Variant Sub-options ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS variant_suboptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    variant_id INTEGER NOT NULL,
+    label      TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (variant_id) REFERENCES inventory_item_variants(id) ON DELETE CASCADE
+)
+");
+
+// ── Migration: add max_slots to existing variant rows ──
+try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN max_slots INTEGER NOT NULL DEFAULT 1"); } catch(Exception $e) {}
+
+// ── Legacy Item Variants (kept for reference, replaced above) ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS inventory_item_variants_LEGACY (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id    INTEGER NOT NULL,
+    label      TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
 )
 ");
 
@@ -195,26 +234,20 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     FOREIGN KEY (group_id) REFERENCES item_groups(id) ON DELETE CASCADE
 )
 ");
-// ── Item Variants ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS inventory_item_variants (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_id    INTEGER NOT NULL,
-    label      TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
-)
-");
-// ── Migrations: safely add new columns to existing DB ──
+
 $migrations = [
+    // Original user migrations
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN uid TEXT",
+    // Resources: swap emoji icon → PNG image_url
     "ALTER TABLE resources ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
+    // Factories: swap emoji icon → PNG image_url + upgrade config columns
     "ALTER TABLE factories ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE factories ADD COLUMN cost_multiplier REAL NOT NULL DEFAULT 1.5",
     "ALTER TABLE factories ADD COLUMN base_upgrade_time INTEGER NOT NULL DEFAULT 60",
     "ALTER TABLE factories ADD COLUMN upgrade_time_multiplier REAL NOT NULL DEFAULT 1.5",
+    // Factory upgrade costs: add time per level
     "ALTER TABLE factory_upgrade_costs ADD COLUMN upgrade_time_seconds INTEGER NOT NULL DEFAULT 0",
     // Admin permissions: navigation-level access controls
     "ALTER TABLE admin_permissions ADD COLUMN can_settings INTEGER NOT NULL DEFAULT 0",
@@ -234,6 +267,7 @@ foreach ($missing as $u) {
     if ($u['role'] === 'admin') {
         $uid = '0001';
     } else {
+        // Generate unique 4-digit code not already used
         do {
             $uid = str_pad(random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
             $exists = $conn->prepare("SELECT COUNT(*) FROM users WHERE uid = :uid");
@@ -259,7 +293,7 @@ if ($stmt->fetch(PDO::FETCH_ASSOC)['c'] == 0) {
     ")->execute([':pw' => $password]);
 }
 
-// ── Default admin ──
+// ── Default admin (if no other admin exists) ──
 $stmt = $conn->query("SELECT COUNT(*) as c FROM users WHERE username='admin'");
 if ($stmt->fetch(PDO::FETCH_ASSOC)['c'] == 0) {
     $password = password_hash(getenv('ADMIN_PASSWORD') ?: 'ChangeMe!', PASSWORD_BCRYPT);
