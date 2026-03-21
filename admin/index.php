@@ -871,14 +871,14 @@ function imgSrc(string $url): string {
   <?php elseif($section === 'sales-admin-salary'): ?>
 
   <?php
-  // Salary tiers: based on total approved sales amount
-  function calcSalary(float $total): array {
-      if ($total >= 1500)     { $pct = 40; }
-      elseif ($total >= 1000) { $pct = 35; }
-      elseif ($total >= 500)  { $pct = 30; }
-      elseif ($total > 0)     { $pct = 20; }
+  // Salary tiers: based on total SALES (revenue - capital)
+  function calcSalary(float $sales): array {
+      if ($sales >= 1500)     { $pct = 40; }
+      elseif ($sales >= 1000) { $pct = 35; }
+      elseif ($sales >= 500)  { $pct = 30; }
+      elseif ($sales > 0)     { $pct = 20; }
       else                    { $pct = 0;  }
-      return ['pct' => $pct, 'salary' => round($total * $pct / 100, 2)];
+      return ['pct' => $pct, 'salary' => round($sales * $pct / 100, 2)];
   }
 
   // Fetch all admins (not superadmin) with their order stats
@@ -887,61 +887,83 @@ function imgSrc(string $url): string {
       $adminsForSalary = $conn->query("SELECT id, username, uid FROM users WHERE role='admin' ORDER BY uid ASC")->fetchAll(PDO::FETCH_ASSOC);
       foreach ($adminsForSalary as $sa) {
           $aid = $sa['id'];
-          // Total approved sales (sum of price)
-          $sSt = $conn->prepare("SELECT COALESCE(SUM(price),0) AS total, COUNT(*) AS cnt FROM orders WHERE admin_id=:aid AND status='approved'");
+          // Revenue and capital from approved orders
+          $sSt = $conn->prepare("
+              SELECT COALESCE(SUM(price),0) AS revenue,
+                     COALESCE(SUM(capital_price),0) AS capital,
+                     COUNT(*) AS cnt
+              FROM orders WHERE admin_id=:aid AND status='approved'
+          ");
           $sSt->execute([':aid'=>$aid]);
           $sr = $sSt->fetch(PDO::FETCH_ASSOC);
-          $totalSales   = (float)$sr['total'];
-          $catered      = (int)$sr['cnt'];
+          $revenue  = (float)$sr['revenue'];
+          $capital  = (float)$sr['capital'];
+          $sales    = max(0, $revenue - $capital);
+          $catered  = (int)$sr['cnt'];
 
           // Cancelled count
           $cSt = $conn->prepare("SELECT COUNT(*) FROM orders WHERE admin_id=:aid AND status='cancelled'");
           $cSt->execute([':aid'=>$aid]);
           $cancelled = (int)$cSt->fetchColumn();
 
-          $sal = calcSalary($totalSales);
+          $sal = calcSalary($sales);
           $salaryRows[] = [
-              'username'    => $sa['username'],
-              'uid'         => $sa['uid'],
-              'total_sales' => $totalSales,
-              'catered'     => $catered,
-              'cancelled'   => $cancelled,
-              'pct'         => $sal['pct'],
-              'salary'      => $sal['salary'],
+              'username'  => $sa['username'],
+              'uid'       => $sa['uid'],
+              'revenue'   => $revenue,
+              'capital'   => $capital,
+              'sales'     => $sales,
+              'catered'   => $catered,
+              'cancelled' => $cancelled,
+              'pct'       => $sal['pct'],
+              'salary'    => $sal['salary'],
           ];
       }
   } catch (Exception $e) {}
 
   // Overall totals
-  $grandTotal   = array_sum(array_column($salaryRows, 'total_sales'));
+  $grandRevenue = array_sum(array_column($salaryRows, 'revenue'));
+  $grandCapital = array_sum(array_column($salaryRows, 'capital'));
+  $grandSales   = array_sum(array_column($salaryRows, 'sales'));
+  $grandSalary  = array_sum(array_column($salaryRows, 'salary'));
   $grandCatered = array_sum(array_column($salaryRows, 'catered'));
   $grandDenied  = array_sum(array_column($salaryRows, 'cancelled'));
-  $grandSalary  = array_sum(array_column($salaryRows, 'salary'));
   ?>
 
   <!-- Summary cards -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:20px">
     <div class="stat-card">
       <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="#22c55e" stroke-width="1.8" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
-      <div><div class="stat-label">Total Sales</div><div class="stat-value" style="font-size:20px">₱<?= number_format($grandTotal,2) ?></div></div>
+      <div><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:18px">₱<?= number_format($grandRevenue,2) ?></div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="#8b5cf6" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
-      <div><div class="stat-label">Catered Orders</div><div class="stat-value" style="font-size:20px"><?= $grandCatered ?></div></div>
+      <div class="stat-icon amber"><svg width="22" height="22" fill="none" stroke="#f59e0b" stroke-width="1.8" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="2"/></svg></div>
+      <div><div class="stat-label">Total Capital</div><div class="stat-value" style="font-size:18px">₱<?= number_format($grandCapital,2) ?></div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon amber"><svg width="22" height="22" fill="none" stroke="#f59e0b" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
-      <div><div class="stat-label">Denied Orders</div><div class="stat-value" style="font-size:20px"><?= $grandDenied ?></div></div>
+      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="#8b5cf6" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+      <div><div class="stat-label">Sales</div><div class="stat-value" style="font-size:18px">₱<?= number_format($grandSales,2) ?></div><div style="font-size:10px;color:var(--muted)">Revenue − Capital</div></div>
     </div>
     <div class="stat-card">
       <div class="stat-icon green"><svg width="22" height="22" fill="none" stroke="#22c55e" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>
-      <div><div class="stat-label">Total Salary</div><div class="stat-value" style="font-size:20px">₱<?= number_format($grandSalary,2) ?></div></div>
+      <div><div class="stat-label">Total Salary</div><div class="stat-value" style="font-size:18px">₱<?= number_format($grandSalary,2) ?></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg width="22" height="22" fill="none" stroke="#8b5cf6" stroke-width="1.8" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div><div class="stat-label">Catered</div><div class="stat-value" style="font-size:20px"><?= $grandCatered ?></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon amber"><svg width="22" height="22" fill="none" stroke="#f59e0b" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
+      <div><div class="stat-label">Denied</div><div class="stat-value" style="font-size:20px"><?= $grandDenied ?></div></div>
     </div>
   </div>
 
   <!-- Salary rate legend -->
   <div class="card" style="margin-bottom:16px">
-    <div class="card-header"><span class="card-title">Salary Rate Tiers</span></div>
+    <div class="card-header">
+      <span class="card-title">Salary Rate Tiers</span>
+      <span style="font-size:12px;color:var(--muted)">Based on Sales (Revenue − Capital)</span>
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 20px">
       <span class="salary-tier-badge">₱1 – ₱499 <strong>→ 20%</strong></span>
       <span class="salary-tier-badge">₱500 – ₱999 <strong>→ 30%</strong></span>
@@ -960,14 +982,16 @@ function imgSrc(string $url): string {
       <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No admins found.</div>
     <?php else: ?>
     <div style="overflow-x:auto">
-    <table class="data-table">
+    <table class="data-table" style="min-width:860px">
       <thead>
         <tr>
           <th>UID</th>
           <th>Admin</th>
-          <th>Total Sales</th>
+          <th>Revenue</th>
+          <th>Capital</th>
+          <th>Sales</th>
           <th>Catered</th>
-          <th>Cancelled</th>
+          <th>Denied</th>
           <th>Rate</th>
           <th>Salary</th>
         </tr>
@@ -977,7 +1001,9 @@ function imgSrc(string $url): string {
       <tr>
         <td><span class="uid-badge"><?= htmlspecialchars($sr['uid'] ?? '—') ?></span></td>
         <td style="font-weight:600;font-size:13px"><?= htmlspecialchars($sr['username']) ?></td>
-        <td style="font-weight:600;color:var(--green)">₱<?= number_format($sr['total_sales'],2) ?></td>
+        <td style="color:var(--green);font-weight:600">₱<?= number_format($sr['revenue'],2) ?></td>
+        <td style="color:#f59e0b;font-weight:500">₱<?= number_format($sr['capital'],2) ?></td>
+        <td style="font-weight:700">₱<?= number_format($sr['sales'],2) ?></td>
         <td><span class="perm-on" style="font-size:12px">✓ <?= $sr['catered'] ?></span></td>
         <td><span class="perm-off" style="font-size:12px">✗ <?= $sr['cancelled'] ?></span></td>
         <td>
@@ -993,8 +1019,10 @@ function imgSrc(string $url): string {
       </tbody>
       <tfoot>
         <tr style="border-top:2px solid var(--border)">
-          <td colspan="2" style="font-weight:700;font-size:13px;padding:12px 16px">TOTAL</td>
-          <td style="font-weight:700;color:var(--green)">₱<?= number_format($grandTotal,2) ?></td>
+          <td colspan="2" style="font-weight:700;font-size:13px">TOTAL</td>
+          <td style="font-weight:700;color:var(--green)">₱<?= number_format($grandRevenue,2) ?></td>
+          <td style="font-weight:700;color:#f59e0b">₱<?= number_format($grandCapital,2) ?></td>
+          <td style="font-weight:700">₱<?= number_format($grandSales,2) ?></td>
           <td><span class="perm-on" style="font-size:12px">✓ <?= $grandCatered ?></span></td>
           <td><span class="perm-off" style="font-size:12px">✗ <?= $grandDenied ?></span></td>
           <td></td>
@@ -1413,6 +1441,59 @@ function imgSrc(string $url): string {
     </div>
 
     <?php if($isSuperadmin): ?>
+    <div class="card">
+      <div class="card-header"><span class="card-title">🗑️ Delete Orders</span></div>
+      <div style="padding:24px">
+        <p style="font-size:13.5px;color:var(--muted);margin-bottom:18px;line-height:1.6">
+          Select which admin's orders to export and delete. Orders are exported to Excel first — deletion only happens after the file downloads successfully.
+        </p>
+        <div class="field-group">
+          <label class="field-label">Select Admin</label>
+          <select id="deleteOrdersAdminSel" class="field-input" style="margin-bottom:0">
+            <option value="0">All Orders (every admin)</option>
+            <?php
+            $adminsForDelete = $conn->query("SELECT id, username, uid FROM users WHERE role='admin' ORDER BY uid ASC")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($adminsForDelete as $ad): ?>
+            <option value="<?= $ad['id'] ?>"><?= htmlspecialchars($ad['username']) ?> (<?= htmlspecialchars($ad['uid']) ?>)</option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <button class="btn btn-danger" style="margin-top:14px" onclick="startDeleteOrders()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>
+          Export & Delete Orders
+        </button>
+      </div>
+    </div>
+
+    <!-- Delete Orders Progress Modal -->
+    <div class="modal" id="deleteOrdersModal">
+    <div class="modal-box" style="width:400px;text-align:center">
+      <div id="doStepExport">
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px">Exporting Orders…</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Generating Excel file. Please do not close this tab.</p>
+        <div class="progress-track"><div class="progress-bar" id="doProgressBar"></div></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:10px" id="doProgressLabel">Preparing…</div>
+      </div>
+      <div id="doStepDelete" style="display:none">
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px">Deleting Orders…</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Removing records from database.</p>
+        <div class="progress-track"><div class="progress-bar" style="width:100%;animation:progress-indeterminate 1.2s ease infinite"></div></div>
+      </div>
+      <div id="doStepDone" style="display:none">
+        <div style="font-size:36px;margin-bottom:10px">✅</div>
+        <div style="font-size:17px;font-weight:700;margin-bottom:6px">Done!</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px" id="doStepDoneMsg"></p>
+        <button class="btn btn-dark" onclick="closeModal('deleteOrdersModal');location.reload()">Close</button>
+      </div>
+      <div id="doStepError" style="display:none">
+        <div style="font-size:36px;margin-bottom:10px">⚠️</div>
+        <div style="font-size:17px;font-weight:700;margin-bottom:6px">Cancelled</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px" id="doErrMsg">Export was cancelled. Orders were not deleted.</p>
+        <button class="btn btn-ghost" onclick="closeModal('deleteOrdersModal')">Close</button>
+      </div>
+    </div>
+    </div>
+
     <div class="card">
       <div class="card-header"><span class="card-title">💾 Download Database</span></div>
       <div style="padding:24px">
@@ -2023,6 +2104,7 @@ function addVariantBlock(listId, variant = null) {
 
   const label    = variant?.label      || '';
   const slots    = variant?.slots ?? variant?.max_slots ?? 1;
+  const capital  = variant?.capital ?? variant?.capital_price ?? '';
   const price    = variant?.price      || '';
   const subopts  = variant?.suboptions || [];
 
@@ -2037,6 +2119,11 @@ function addVariantBlock(listId, variant = null) {
             <label style="font-size:11px;color:var(--muted);white-space:nowrap">Slots</label>
             <input type="number" class="vb-slots field-input" value="${slots}" min="1"
               style="width:64px;padding:8px 10px;font-size:13px;text-align:center">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex:1">
+            <label style="font-size:11px;color:var(--muted);white-space:nowrap">Capital (₱)</label>
+            <input type="number" class="vb-capital field-input" value="${capital}" min="0" step="0.01"
+              placeholder="0.00" style="flex:1;padding:8px 10px;font-size:13px">
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex:1">
             <label style="font-size:11px;color:var(--muted);white-space:nowrap">Price (₱)</label>
@@ -2091,10 +2178,11 @@ function serializeVariants(listId, targetId) {
   blocks.forEach(block => {
     const label = block.querySelector('.vb-label').value.trim();
     if (!label) return;
-    const slots = parseInt(block.querySelector('.vb-slots').value) || 1;
-    const price = parseFloat(block.querySelector('.vb-price').value) || 0;
+    const slots   = parseInt(block.querySelector('.vb-slots').value)   || 1;
+    const capital = parseFloat(block.querySelector('.vb-capital')?.value) || 0;
+    const price   = parseFloat(block.querySelector('.vb-price').value)   || 0;
     const suboptions = [...block.querySelectorAll('.vb-subopt-pill')].map(p => p.textContent.trim().replace('×','').trim()).filter(Boolean);
-    result.push({ label, slots, price, suboptions });
+    result.push({ label, slots, capital, price, suboptions });
   });
   document.getElementById(targetId).value = JSON.stringify(result);
 }
@@ -2151,6 +2239,109 @@ function viewScreenshot(src, receiptId) {
   document.getElementById('ssImg').src = src;
   document.getElementById('ssReceiptLabel').textContent = 'Receipt ' + receiptId;
   openModal('screenshotModal');
+}
+
+// ── Delete Orders: Export → Download → Delete ──
+let _doAborted = false;
+
+async function startDeleteOrders() {
+  const adminId = document.getElementById('deleteOrdersAdminSel').value;
+  const label   = document.getElementById('deleteOrdersAdminSel').selectedOptions[0].text;
+
+  if (!confirm(`Export and permanently delete orders for: "${label}"?
+
+This cannot be undone. The file will download first.`)) return;
+
+  _doAborted = false;
+
+  // Show modal — export step
+  ['doStepExport','doStepDelete','doStepDone','doStepError'].forEach(id => {
+    document.getElementById(id).style.display = id === 'doStepExport' ? '' : 'none';
+  });
+  openModal('deleteOrdersModal');
+
+  // Animate progress bar while fetching
+  const bar   = document.getElementById('doProgressBar');
+  const lbl   = document.getElementById('doProgressLabel');
+  let pct     = 0;
+  const timer = setInterval(() => {
+    pct = Math.min(pct + Math.random() * 8, 85);
+    bar.style.width = pct + '%';
+    lbl.textContent = pct < 40 ? 'Querying database…'
+                    : pct < 70 ? 'Building Excel file…'
+                    :             'Finalising…';
+  }, 200);
+
+  // Tab close guard — cancel if user navigates away
+  const onUnload = () => { _doAborted = true; };
+  window.addEventListener('beforeunload', onUnload);
+
+  let blob, filename;
+  try {
+    const url = `../api/orders_manager.php?action=export&admin_id=${adminId}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Export request failed.');
+
+    clearInterval(timer);
+    if (_doAborted) throw new Error('Tab was closed during export.');
+
+    bar.style.width = '100%';
+    lbl.textContent = 'Download ready!';
+
+    blob     = await res.blob();
+    filename = (res.headers.get('Content-Disposition') || '').match(/filename="?([^"]+)"?/)?.[1]
+               || `orders_${adminId || 'all'}_${Date.now()}.xlsx`;
+
+  } catch (err) {
+    clearInterval(timer);
+    window.removeEventListener('beforeunload', onUnload);
+    document.getElementById('doStepExport').style.display = 'none';
+    document.getElementById('doStepError').style.display  = '';
+    document.getElementById('doErrMsg').textContent = err.message || 'Export failed. Orders were not deleted.';
+    return;
+  }
+
+  // Trigger download
+  const a = document.createElement('a');
+  a.href  = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+
+  // Wait a moment, then check if tab is still alive before deleting
+  await new Promise(r => setTimeout(r, 800));
+  if (_doAborted) {
+    window.removeEventListener('beforeunload', onUnload);
+    document.getElementById('doStepExport').style.display = 'none';
+    document.getElementById('doStepError').style.display  = '';
+    document.getElementById('doErrMsg').textContent = 'Tab was closed. Orders were not deleted.';
+    return;
+  }
+
+  // Show delete step
+  document.getElementById('doStepExport').style.display = 'none';
+  document.getElementById('doStepDelete').style.display = '';
+
+  try {
+    const delRes  = await fetch(`../api/orders_manager.php?action=delete&admin_id=${adminId}`);
+    const delData = await delRes.json();
+    window.removeEventListener('beforeunload', onUnload);
+
+    if (delData.status !== 'success') throw new Error(delData.message || 'Delete failed.');
+
+    document.getElementById('doStepDelete').style.display = 'none';
+    document.getElementById('doStepDone').style.display   = '';
+    document.getElementById('doStepDoneMsg').textContent  =
+      `${delData.deleted} order${delData.deleted !== 1 ? 's' : ''} deleted and saved to Excel.`;
+
+  } catch (err) {
+    window.removeEventListener('beforeunload', onUnload);
+    document.getElementById('doStepDelete').style.display = 'none';
+    document.getElementById('doStepError').style.display  = '';
+    document.getElementById('doErrMsg').textContent = 'File was downloaded but deletion failed: ' + err.message;
+  }
 }
 
 function showToast(msg) {
