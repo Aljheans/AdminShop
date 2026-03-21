@@ -1205,38 +1205,73 @@ function imgSrc(string $url): string {
 
 <!-- Add Item Modal -->
 <div class="modal" id="addItemModal">
-<div class="modal-box" style="max-width:480px">
-  <h3>Add Inventory Item</h3>
+<div class="modal-box" style="max-width:460px">
   <form method="post" action="save_inventory_item.php">
     <input type="hidden" name="id" value="0">
-    <label class="field-label">Group</label>
-    <select name="group_id" required class="field-input" style="margin-bottom:14px">
-      <option value="">— Select group —</option>
-      <?php foreach($itemGroups as $g): ?>
-      <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
-      <?php endforeach; ?>
-    </select>
-    <label class="field-label">Title</label>
-    <input type="text" name="title" placeholder="e.g. Netflix Account" required class="field-input" style="margin-bottom:14px">
-    <label class="field-label">Description 1 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-    <input type="text" name="description1" placeholder="e.g. Streaming service" class="field-input" style="margin-bottom:14px">
-    <label class="field-label">Description 2 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-    <input type="text" name="description2" placeholder="e.g. Monthly plan" class="field-input" style="margin-bottom:14px">
-    <label class="field-label">Initial Stock</label>
-    <input type="number" name="stock" value="0" min="0" class="field-input" style="margin-bottom:16px">
     <input type="hidden" name="variants_json" id="addVariantsJson">
-    <label class="field-label">
-      Variants / Plans
-      <span style="font-weight:400;color:var(--muted);font-size:11px"> — e.g. Shared Profile (2 slots), Solo Profile (1 slot)</span>
-    </label>
-    <div id="addVariantList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px"></div>
-    <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="addVariantBlock('addVariantList')">
-      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Add Variant
-    </button>
-    <div class="modal-footer" style="margin-top:16px">
-      <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
-      <button type="submit" class="btn btn-dark" onclick="serializeVariants('addVariantList','addVariantsJson')">Save Item</button>
+
+    <!-- Step indicator -->
+    <div class="wizard-steps">
+      <div class="wizard-step active" id="addStep1Dot">
+        <span class="wizard-step-num">1</span>
+        <span class="wizard-step-label">Details</span>
+      </div>
+      <div class="wizard-step-line"></div>
+      <div class="wizard-step" id="addStep2Dot">
+        <span class="wizard-step-num">2</span>
+        <span class="wizard-step-label">Variants</span>
+      </div>
+    </div>
+
+    <!-- ── Step 1: Details ── -->
+    <div id="addStep1">
+      <label class="field-label">Group</label>
+      <select name="group_id" id="addGroupId" required class="field-input" style="margin-bottom:14px">
+        <option value="">— Select group —</option>
+        <?php foreach($itemGroups as $g): ?>
+        <option value="<?= $g['id'] ?>"><?= htmlspecialchars($g['title']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <label class="field-label">Title</label>
+      <input type="text" name="title" id="addTitle" placeholder="e.g. Netflix Account" required class="field-input" style="margin-bottom:14px">
+      <label class="field-label">Description 1 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input type="text" name="description1" placeholder="e.g. Streaming service" class="field-input" style="margin-bottom:14px">
+      <label class="field-label">Description 2 <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input type="text" name="description2" placeholder="e.g. Monthly plan" class="field-input" style="margin-bottom:14px">
+      <label class="field-label">Initial Stock</label>
+      <input type="number" name="stock" value="0" min="0" class="field-input" style="margin-bottom:4px">
+      <div class="modal-footer" style="margin-top:20px">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('addItemModal')">Cancel</button>
+        <button type="button" class="btn btn-dark" onclick="addItemNextStep()">
+          Next
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Step 2: Variants ── -->
+    <div id="addStep2" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-weight:700;font-size:15px" id="addStep2ItemName"></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Add variants / plans for this item</div>
+        </div>
+        <button type="button" class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="addVariantBlock('addVariantList')">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Variant
+        </button>
+      </div>
+      <div id="addVariantList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;max-height:50vh;overflow-y:auto;padding-right:2px"></div>
+      <div class="modal-footer" style="margin-top:20px">
+        <button type="button" class="btn btn-ghost" onclick="addItemPrevStep()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <button type="submit" class="btn btn-dark" onclick="serializeVariants('addVariantList','addVariantsJson')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Save Item
+        </button>
+      </div>
     </div>
   </form>
 </div>
@@ -1307,9 +1342,34 @@ function toggleSalesSubs(cb, adminId) {
 function openModal(id) {
   document.getElementById(id).classList.add('open');
   if (id === 'addItemModal') {
+    // Reset to step 1
+    document.getElementById('addStep1').style.display = '';
+    document.getElementById('addStep2').style.display = 'none';
+    document.getElementById('addStep1Dot').classList.add('active');
+    document.getElementById('addStep2Dot').classList.remove('active');
     document.getElementById('addVariantList').innerHTML = '';
     document.getElementById('addVariantsJson').value = '';
   }
+}
+
+// ── Add Item Wizard ──
+function addItemNextStep() {
+  const groupSel = document.getElementById('addGroupId');
+  const titleEl  = document.getElementById('addTitle');
+  if (!groupSel.value) { groupSel.focus(); showToast('Please select a group.'); return; }
+  if (!titleEl.value.trim()) { titleEl.focus(); showToast('Please enter a title.'); return; }
+
+  document.getElementById('addStep2ItemName').textContent = titleEl.value.trim();
+  document.getElementById('addStep1').style.display = 'none';
+  document.getElementById('addStep2').style.display = '';
+  document.getElementById('addStep1Dot').classList.remove('active');
+  document.getElementById('addStep2Dot').classList.add('active');
+}
+function addItemPrevStep() {
+  document.getElementById('addStep1').style.display = '';
+  document.getElementById('addStep2').style.display = 'none';
+  document.getElementById('addStep1Dot').classList.add('active');
+  document.getElementById('addStep2Dot').classList.remove('active');
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 async function post(url, data) {
