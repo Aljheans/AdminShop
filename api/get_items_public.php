@@ -15,7 +15,7 @@ try {
 
         foreach ($items as &$item) {
             // Fetch variants with slots
-            $vStmt = $conn->prepare("SELECT id, label, max_slots, price, slots_used FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+            $vStmt = $conn->prepare("SELECT id, label, max_slots, price, capital_price, slots_used FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
             $vStmt->execute([':id' => $item['id']]);
             $variants = $vStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -28,6 +28,7 @@ try {
                 $v['slots_used']       = (int)$v['slots_used'];
                 $v['slots_available']  = max(0, $v['max_slots'] - $v['slots_used']);
                 $v['price']            = (float)$v['price'];
+                $v['capital_price']    = (float)$v['capital_price'];
                 // Keep id for purchase — gateway uses it
             }
             unset($v);

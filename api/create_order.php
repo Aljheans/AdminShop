@@ -81,8 +81,8 @@ try {
     // Insert order (status = 'reviewing')
     $conn->prepare("
         INSERT INTO orders (receipt_id, user_id, admin_id, item_id, variant_id, suboption,
-                            item_title, variant_label, price, screenshot, status)
-        VALUES (:r, :uid, :aid, :iid, :vid, :sub, :ititle, :vlabel, :price, :ss, 'reviewing')
+                            item_title, variant_label, price, capital_price, screenshot, status)
+        VALUES (:r, :uid, :aid, :iid, :vid, :sub, :ititle, :vlabel, :price, :cap, :ss, 'reviewing')
     ")->execute([
         ':r'      => $receiptId,
         ':uid'    => $userId,
@@ -93,6 +93,7 @@ try {
         ':ititle' => $itemTitle,
         ':vlabel' => $variant['label'],
         ':price'  => $variant['price'],
+        ':cap'    => $variant['capital_price'] ?? 0,
         ':ss'     => $screenshot,
     ]);
 
