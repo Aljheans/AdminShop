@@ -19,7 +19,7 @@ rate_limit('reset_password', 30, 60);
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/activity.php';
-session_start();
+// session already started by gateway_guard.php
 $adminName = $_SESSION['username'] ?? 'admin';
 
 // Ensure the log table exists (safety net in case db.php wasn't redeployed)
