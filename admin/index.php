@@ -867,6 +867,156 @@ function imgSrc(string $url): string {
     </div>
   </div>
 
+  <!-- ══════════ TOTAL ORDERED CATERED ══════════ -->
+  <?php elseif($section === 'sales-catered'): ?>
+
+  <?php
+  $cMyId = $_SESSION['user_id'] ?? 0;
+  $cOrders = [];
+  try {
+      if ($isSuperadmin) {
+          $cOrders = $conn->query("
+              SELECT o.receipt_id, o.item_title, o.variant_label, o.suboption, o.price, o.created_at,
+                     u.username AS buyer, a.username AS admin_name
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              WHERE o.status = 'approved'
+              ORDER BY o.created_at DESC
+          ")->fetchAll(PDO::FETCH_ASSOC);
+      } else {
+          $cStmt = $conn->prepare("
+              SELECT o.receipt_id, o.item_title, o.variant_label, o.suboption, o.price, o.created_at,
+                     u.username AS buyer, a.username AS admin_name
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              WHERE o.status = 'approved' AND o.admin_id = :aid
+              ORDER BY o.created_at DESC
+          ");
+          $cStmt->execute([':aid' => $cMyId]);
+          $cOrders = $cStmt->fetchAll(PDO::FETCH_ASSOC);
+      }
+  } catch (Exception $e) {}
+  ?>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Total Ordered Catered</span>
+      <span style="font-size:12px;color:var(--muted)"><?= count($cOrders) ?> approved order<?= count($cOrders)!=1?'s':'' ?></span>
+    </div>
+    <?php if(empty($cOrders)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No approved orders yet.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:780px">
+      <thead>
+        <tr>
+          <th>Receipt ID</th>
+          <th>Sold By</th>
+          <th>Sold To</th>
+          <th>Date</th>
+          <th>Item Purchased</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach($cOrders as $co): ?>
+      <tr>
+        <td><span class="code-badge" style="font-size:12px"><?= htmlspecialchars($co['receipt_id']) ?></span></td>
+        <td style="font-weight:500;font-size:13px"><?= htmlspecialchars($co['admin_name']) ?></td>
+        <td style="font-size:13px"><?= htmlspecialchars($co['buyer']) ?></td>
+        <td style="font-size:12px;color:var(--muted);white-space:nowrap"><?= htmlspecialchars(substr($co['created_at'],0,16)) ?></td>
+        <td style="font-size:13px">
+          <span style="font-weight:500"><?= htmlspecialchars($co['item_title']) ?></span>
+          <?php if($co['variant_label']): ?><span style="color:var(--muted)"> — <?= htmlspecialchars($co['variant_label']) ?></span><?php endif; ?>
+          <?php if($co['suboption']): ?><span style="color:var(--muted);font-size:11px"> (<?= htmlspecialchars($co['suboption']) ?>)</span><?php endif; ?>
+          <div style="font-size:12px;font-weight:700;color:var(--purple)">₱<?= number_format((float)$co['price'],2) ?></div>
+        </td>
+        <td><span class="perm-on" style="font-size:12px">✓ Approved</span></td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+  </div>
+
+  <!-- ══════════ TOTAL ORDERED DENIED ══════════ -->
+  <?php elseif($section === 'sales-denied'): ?>
+
+  <?php
+  $dMyId = $_SESSION['user_id'] ?? 0;
+  $dOrders = [];
+  try {
+      if ($isSuperadmin) {
+          $dOrders = $conn->query("
+              SELECT o.receipt_id, o.item_title, o.variant_label, o.suboption, o.price, o.created_at,
+                     u.username AS buyer, a.username AS admin_name
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              WHERE o.status = 'cancelled'
+              ORDER BY o.created_at DESC
+          ")->fetchAll(PDO::FETCH_ASSOC);
+      } else {
+          $dStmt = $conn->prepare("
+              SELECT o.receipt_id, o.item_title, o.variant_label, o.suboption, o.price, o.created_at,
+                     u.username AS buyer, a.username AS admin_name
+              FROM orders o
+              JOIN users u ON u.id = o.user_id
+              JOIN users a ON a.id = o.admin_id
+              WHERE o.status = 'cancelled' AND o.admin_id = :aid
+              ORDER BY o.created_at DESC
+          ");
+          $dStmt->execute([':aid' => $dMyId]);
+          $dOrders = $dStmt->fetchAll(PDO::FETCH_ASSOC);
+      }
+  } catch (Exception $e) {}
+  ?>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Total Ordered Denied</span>
+      <span style="font-size:12px;color:var(--muted)"><?= count($dOrders) ?> cancelled order<?= count($dOrders)!=1?'s':'' ?></span>
+    </div>
+    <?php if(empty($dOrders)): ?>
+      <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">No cancelled orders yet.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:780px">
+      <thead>
+        <tr>
+          <th>Receipt ID</th>
+          <th>Sold By</th>
+          <th>Sold To</th>
+          <th>Date</th>
+          <th>Item Purchased</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach($dOrders as $do): ?>
+      <tr>
+        <td><span class="code-badge" style="font-size:12px"><?= htmlspecialchars($do['receipt_id']) ?></span></td>
+        <td style="font-weight:500;font-size:13px"><?= htmlspecialchars($do['admin_name']) ?></td>
+        <td style="font-size:13px"><?= htmlspecialchars($do['buyer']) ?></td>
+        <td style="font-size:12px;color:var(--muted);white-space:nowrap"><?= htmlspecialchars(substr($do['created_at'],0,16)) ?></td>
+        <td style="font-size:13px">
+          <span style="font-weight:500"><?= htmlspecialchars($do['item_title']) ?></span>
+          <?php if($do['variant_label']): ?><span style="color:var(--muted)"> — <?= htmlspecialchars($do['variant_label']) ?></span><?php endif; ?>
+          <?php if($do['suboption']): ?><span style="color:var(--muted);font-size:11px"> (<?= htmlspecialchars($do['suboption']) ?>)</span><?php endif; ?>
+          <div style="font-size:12px;font-weight:700;color:var(--purple)">₱<?= number_format((float)$do['price'],2) ?></div>
+        </td>
+        <td><span class="perm-off" style="font-size:12px">✗ Cancelled</span></td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+  </div>
+
   <?php elseif(isset($salesLabels[$section])): ?>
   <div class="card">
     <div class="card-header">
