@@ -47,8 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $slots    = max(1, (int)($v['slots'] ?? 1));
             $subopts  = array_values(array_filter(array_map('trim', (array)($v['suboptions'] ?? [])), fn($s) => $s !== ''));
 
-            $conn->prepare("INSERT INTO inventory_item_variants (item_id, label, max_slots) VALUES (:iid,:l,:s)")
-                 ->execute([':iid'=>$itemId,':l'=>$label,':s'=>$slots]);
+            $price = round((float)($v['price'] ?? 0), 2);
+            $conn->prepare("INSERT INTO inventory_item_variants (item_id, label, max_slots, price) VALUES (:iid,:l,:s,:p)")
+                 ->execute([':iid'=>$itemId,':l'=>$label,':s'=>$slots,':p'=>$price]);
             $variantId = (int)$conn->lastInsertId();
 
             foreach ($subopts as $sub) {

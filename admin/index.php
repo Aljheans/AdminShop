@@ -189,7 +189,7 @@ if ($isSuperadmin) {
         ")->fetchAll(PDO::FETCH_ASSOC);
         // Attach variants (with slots + suboptions) to each item
         foreach ($inventoryItems as &$invItem) {
-            $vStmt = $conn->prepare("SELECT id, label, max_slots FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+            $vStmt = $conn->prepare("SELECT id, label, max_slots, price, slots_used FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
             $vStmt->execute([':id' => $invItem['id']]);
             $varRows = $vStmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($varRows as &$vr) {
@@ -831,7 +831,7 @@ function imgSrc(string $url): string {
       $grpItems = $grpItemsStmt->fetchAll(PDO::FETCH_ASSOC);
       // Attach variants+suboptions to each group item
       foreach ($grpItems as &$gi) {
-          $gvStmt = $conn->prepare("SELECT id, label, max_slots FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
+          $gvStmt = $conn->prepare("SELECT id, label, max_slots, price, slots_used FROM inventory_item_variants WHERE item_id=:id ORDER BY id ASC");
           $gvStmt->execute([':id'=>$gi['id']]);
           $gvRows = $gvStmt->fetchAll(PDO::FETCH_ASSOC);
           foreach ($gvRows as &$gvr) {
@@ -957,7 +957,8 @@ function imgSrc(string $url): string {
             <div class="inv-variant-block">
               <div class="inv-variant-block-header">
                 <span class="inv-variant-tag"><?= htmlspecialchars($iv['label']) ?></span>
-                <span class="inv-slots-badge"><?= $iv['max_slots'] ?> slot<?= $iv['max_slots']!=1?'s':'' ?></span>
+                <span class="inv-slots-badge"><?= ($iv['max_slots'] - ($iv['slots_used']??0)) ?>/<?= $iv['max_slots'] ?> slots</span>
+                <span class="inv-price-badge">₱<?= number_format((float)$iv['price'],2) ?></span>
               </div>
               <?php if(!empty($iv['suboptions'])): ?>
               <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;padding-left:8px">
@@ -1622,23 +1623,31 @@ function addVariantBlock(listId, variant = null) {
   block.className = 'variant-builder-block';
 
   const label    = variant?.label      || '';
-  const slots    = variant?.slots      || 1;
+  const slots    = variant?.slots ?? variant?.max_slots ?? 1;
+  const price    = variant?.price      || '';
   const subopts  = variant?.suboptions || [];
 
   block.innerHTML = `
     <div class="variant-builder-header">
-      <div style="display:flex;gap:8px;flex:1;align-items:center">
+      <div style="display:flex;flex-direction:column;gap:8px;flex:1">
         <input type="text" class="vb-label field-input" value="${esc(label)}"
           placeholder="Variant name (e.g. Shared Profile)"
-          style="flex:1;padding:8px 12px;font-size:13px">
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-          <label style="font-size:11px;color:var(--muted);white-space:nowrap">Max slots</label>
-          <input type="number" class="vb-slots field-input" value="${slots}" min="1"
-            style="width:64px;padding:8px 10px;font-size:13px;text-align:center">
+          style="padding:8px 12px;font-size:13px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;align-items:center;gap:6px;flex:1">
+            <label style="font-size:11px;color:var(--muted);white-space:nowrap">Slots</label>
+            <input type="number" class="vb-slots field-input" value="${slots}" min="1"
+              style="width:64px;padding:8px 10px;font-size:13px;text-align:center">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex:1">
+            <label style="font-size:11px;color:var(--muted);white-space:nowrap">Price (₱)</label>
+            <input type="number" class="vb-price field-input" value="${price}" min="0" step="0.01"
+              placeholder="0.00" style="flex:1;padding:8px 10px;font-size:13px">
+          </div>
         </div>
       </div>
       <button type="button" onclick="this.closest('.variant-builder-block').remove()"
-        style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--red);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0">×</button>
+        style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:none;color:var(--red);cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;align-self:flex-start">×</button>
     </div>
     <div class="vb-subopts">
       <div class="vb-subopts-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
@@ -1684,8 +1693,9 @@ function serializeVariants(listId, targetId) {
     const label = block.querySelector('.vb-label').value.trim();
     if (!label) return;
     const slots = parseInt(block.querySelector('.vb-slots').value) || 1;
+    const price = parseFloat(block.querySelector('.vb-price').value) || 0;
     const suboptions = [...block.querySelectorAll('.vb-subopt-pill')].map(p => p.textContent.trim().replace('×','').trim()).filter(Boolean);
-    result.push({ label, slots, suboptions });
+    result.push({ label, slots, price, suboptions });
   });
   document.getElementById(targetId).value = JSON.stringify(result);
 }

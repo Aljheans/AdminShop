@@ -89,90 +89,6 @@ CREATE TABLE IF NOT EXISTS activity_log (
 )
 ");
 
-// ── Resources (dirt, water, fire, etc.) ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS resources (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT UNIQUE NOT NULL,
-    image_url   TEXT NOT NULL DEFAULT '',
-    description TEXT NOT NULL DEFAULT '',
-    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-)
-");
-
-// ── Factories ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS factories (
-    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                    TEXT UNIQUE NOT NULL,
-    image_url               TEXT NOT NULL DEFAULT '',
-    description             TEXT NOT NULL DEFAULT '',
-    resource_id             INTEGER NOT NULL,
-    base_production_rate    REAL NOT NULL DEFAULT 1.0,
-    production_per_level    REAL NOT NULL DEFAULT 0.5,
-    max_level               INTEGER NOT NULL DEFAULT 10,
-    cost_multiplier         REAL NOT NULL DEFAULT 1.5,
-    base_upgrade_time       INTEGER NOT NULL DEFAULT 60,
-    upgrade_time_multiplier REAL NOT NULL DEFAULT 1.5,
-    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
-)
-");
-
-// ── Factory upgrade costs (resources + coins + time per level) ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS factory_upgrade_costs (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    factory_id            INTEGER NOT NULL,
-    level                 INTEGER NOT NULL,
-    coins_cost            INTEGER NOT NULL DEFAULT 0,
-    upgrade_time_seconds  INTEGER NOT NULL DEFAULT 0,
-    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(factory_id, level),
-    FOREIGN KEY (factory_id) REFERENCES factories(id) ON DELETE CASCADE
-)
-");
-
-// ── Resource costs per upgrade level (multiple resources possible) ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS factory_upgrade_resource_costs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    factory_id  INTEGER NOT NULL,
-    level       INTEGER NOT NULL,
-    resource_id INTEGER NOT NULL,
-    amount      INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(factory_id, level, resource_id),
-    FOREIGN KEY (factory_id)  REFERENCES factories(id)  ON DELETE CASCADE,
-    FOREIGN KEY (resource_id) REFERENCES resources(id)  ON DELETE CASCADE
-)
-");
-
-// ── User-owned resources ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS user_resources (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    resource_id INTEGER NOT NULL,
-    amount      INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(user_id, resource_id),
-    FOREIGN KEY (user_id)     REFERENCES users(id)     ON DELETE CASCADE,
-    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
-)
-");
-
-// ── User-owned factories ──
-$conn->exec("
-CREATE TABLE IF NOT EXISTS user_factories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL,
-    factory_id INTEGER NOT NULL,
-    level      INTEGER NOT NULL DEFAULT 1,
-    UNIQUE(user_id, factory_id),
-    FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
-    FOREIGN KEY (factory_id) REFERENCES factories(id) ON DELETE CASCADE
-)
-");
-
 // ── Migrations: safely add new columns to existing DB ──
 // ── Item Groups ──
 $conn->exec("
@@ -207,8 +123,27 @@ CREATE TABLE IF NOT EXISTS variant_suboptions (
 )
 ");
 
-// ── Migration: add max_slots to existing variant rows ──
+// ── Migration: add max_slots + price + slots_used to existing variant rows ──
 try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN max_slots INTEGER NOT NULL DEFAULT 1"); } catch(Exception $e) {}
+try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0"); } catch(Exception $e) {}
+try { $conn->exec("ALTER TABLE inventory_item_variants ADD COLUMN slots_used INTEGER NOT NULL DEFAULT 0"); } catch(Exception $e) {}
+
+// ── Purchases ──
+$conn->exec("
+CREATE TABLE IF NOT EXISTS purchases (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    item_id     INTEGER NOT NULL,
+    variant_id  INTEGER NOT NULL,
+    suboption   TEXT NOT NULL DEFAULT '',
+    price_paid  DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'active',
+    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id)   REFERENCES users(id),
+    FOREIGN KEY (item_id)   REFERENCES inventory_items(id),
+    FOREIGN KEY (variant_id) REFERENCES inventory_item_variants(id)
+)
+");
 
 // ── Legacy Item Variants (kept for reference, replaced above) ──
 $conn->exec("
@@ -240,15 +175,6 @@ $migrations = [
     "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN last_activity DATETIME DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE users ADD COLUMN uid TEXT",
-    // Resources: swap emoji icon → PNG image_url
-    "ALTER TABLE resources ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
-    // Factories: swap emoji icon → PNG image_url + upgrade config columns
-    "ALTER TABLE factories ADD COLUMN image_url TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE factories ADD COLUMN cost_multiplier REAL NOT NULL DEFAULT 1.5",
-    "ALTER TABLE factories ADD COLUMN base_upgrade_time INTEGER NOT NULL DEFAULT 60",
-    "ALTER TABLE factories ADD COLUMN upgrade_time_multiplier REAL NOT NULL DEFAULT 1.5",
-    // Factory upgrade costs: add time per level
-    "ALTER TABLE factory_upgrade_costs ADD COLUMN upgrade_time_seconds INTEGER NOT NULL DEFAULT 0",
     // Admin permissions: navigation-level access controls
     "ALTER TABLE admin_permissions ADD COLUMN can_settings INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE admin_permissions ADD COLUMN can_sales INTEGER NOT NULL DEFAULT 0",
