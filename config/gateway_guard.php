@@ -2,22 +2,32 @@
 /**
  * Gateway Guard
  * =============
- * Rejects any request that does not carry the correct internal key.
- *
- * The key is checked in three places (in order of priority):
- *   1. Authorization: Bearer <key>   ← standard, never stripped by proxies
- *   2. X-Internal-Key: <key>         ← custom header fallback
- *   3. Request body field "key"      ← body fallback for POST requests
+ * Allows requests from two sources:
+ *   1. FastAPI gateway  — carries Authorization: Bearer <INTERNAL_SYNC_KEY>
+ *                         or X-Internal-Key: <INTERNAL_SYNC_KEY>
+ *   2. Admin dashboard  — has a valid PHP session with role admin/superadmin
+ *      (the dashboard runs on the same server and calls API files directly)
  */
 
-// Load env so INTERNAL_SYNC_KEY is available
+// Load env
 if (!getenv('INTERNAL_SYNC_KEY')) {
     require_once __DIR__ . '/env.php';
 }
 
 $_expectedKey = getenv('INTERNAL_SYNC_KEY') ?: '';
 
-// Reject if key is not configured on this server
+// ── Path 1: Session-based (admin dashboard calling its own API) ──
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$_sessionRole = $_SESSION['role'] ?? '';
+if (in_array($_sessionRole, ['admin', 'superadmin'])) {
+    // Valid admin session — allow through
+    return;
+}
+session_write_close(); // don't keep session locked for gateway calls
+
+// ── Path 2: Gateway key ──
 if ($_expectedKey === '') {
     http_response_code(503);
     header('Content-Type: application/json');
@@ -25,28 +35,17 @@ if ($_expectedKey === '') {
     exit;
 }
 
-// ── Read the provided key from any of the three locations ──
-
-// 1. Authorization: Bearer <key>
-$_authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+// Check Authorization: Bearer <key>
+$_authHeader  = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+$_providedKey = '';
 if (str_starts_with($_authHeader, 'Bearer ')) {
     $_providedKey = substr($_authHeader, 7);
-} else {
-    $_providedKey = '';
 }
-
-// 2. X-Internal-Key header (fallback)
+// Fallback: X-Internal-Key header
 if ($_providedKey === '') {
     $_providedKey = $_SERVER['HTTP_X_INTERNAL_KEY'] ?? '';
 }
 
-// 3. Request body field (POST fallback)
-if ($_providedKey === '') {
-    $_body = json_decode(file_get_contents('php://input'), true);
-    $_providedKey = $_body['_key'] ?? '';
-}
-
-// ── Constant-time comparison ──
 if (!hash_equals($_expectedKey, trim($_providedKey))) {
     http_response_code(403);
     header('Content-Type: application/json');
@@ -54,6 +53,5 @@ if (!hash_equals($_expectedKey, trim($_providedKey))) {
     exit;
 }
 
-// All good — clean up
-unset($_expectedKey, $_providedKey, $_authHeader, $_body);
+unset($_expectedKey, $_providedKey, $_authHeader, $_sessionRole);
 ?>

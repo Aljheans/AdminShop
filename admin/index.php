@@ -57,7 +57,10 @@ if (isset($_GET['section'])) {
 
 // Permission gate for non-superadmins
 if (!$isSuperadmin) {
-    // Admins management page: all admins can VIEW (read-only), editing is blocked in the UI
+    // Admins section: superadmin only
+    if ($section === 'admins' && !$isSuperadmin) {
+        $section = $myPerms['can_userdata'] ? 'user-management' : 'activity';
+    }
     // Settings: only if the admin has can_settings permission
     if ($section === 'settings' && !$myPerms['can_settings']) {
         $section = 'user-management';
@@ -335,10 +338,12 @@ function imgSrc(string $url): string {
           Users
         </a>
         <?php endif; ?>
+        <?php if($isSuperadmin): ?>
         <a href="?section=admins" class="sidenav-item sidenav-child <?= $section==='admins'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
           Admins
         </a>
+        <?php endif; ?>
         <?php if($isSuperadmin || $myPerms['can_activity']): ?>
         <a href="?section=activity" class="sidenav-item sidenav-child <?= $section==='activity'?'active':'' ?>">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
